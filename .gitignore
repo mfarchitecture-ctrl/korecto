@@ -1,0 +1,36 @@
+# Exécutables et archives : distribués via les Releases GitHub, pas versionnés
+*.exe
+*.zip
+*.dll
+*.pdb
+
+# Réglages propres à chaque PC (thème, choix de l'IA)
+PARAMETRES_IA/
+**/PARAMETRES_IA/
+
+# Fichiers générés par les tests et les compilations
+src/tests/TEMP/
+src/tests/RESULTATS.txt
+src/tests/RELECTURE_*.txt
+src/tests/*.avant.*
+src/tests/AVANT_*
+src/TEST_*.txt
+src/VERIFICATION.txt
+src/DIAGNOSTIC_OUTLOOK.txt
+TEMP/
+
+# Fichiers temporaires (Dropbox, éditeurs)
+*.tmp
+*.tmp.*
+*.log
+*(Copie en conflit*
+*(conflicted copy*
+.dropbox*
+Thumbs.db
+desktop.ini
+
+# Livraisons fabriquées localement
+dist/
+src/tests/*.png
+docs/images/_*
+notes-de-travail/
