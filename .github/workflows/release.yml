@@ -1,0 +1,43 @@
+name: Release
+
+# Une étiquette vX.Y.Z poussée sur GitHub compile Korecto.exe et publie la Release.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Vérifier que l'étiquette correspond à la version de l'exe
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'.TrimStart('v')
+          $match = Select-String -Path src/AppSettings.cs -Pattern 'Version = "([^"]+)"'
+          $version = $match.Matches[0].Groups[1].Value
+          if ($tag -ne $version) { throw "L'étiquette v$tag ne correspond pas à AppBrand.Version ($version) : Release annulée." }
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Compiler Korecto.exe
+        shell: pwsh
+        run: ./src/CONSTRUIRE.ps1
+
+      - name: Contrôler l'exe compilé
+        shell: pwsh
+        run: |
+          $exe = Get-Item src/Korecto.exe
+          $inside = [Diagnostics.FileVersionInfo]::GetVersionInfo($exe.FullName).FileVersion
+          if ($inside -ne "$env:VERSION.0") { throw "L'exe annonce $inside au lieu de $env:VERSION.0." }
+          "Korecto.exe : $($exe.Length) octets, version $inside"
+
+      - name: Publier la Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" src/Korecto.exe --title "Korecto $env:VERSION" --generate-notes --verify-tag

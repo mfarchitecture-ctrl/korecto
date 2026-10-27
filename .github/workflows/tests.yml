@@ -1,0 +1,20 @@
+name: Tests
+
+# Informatif : les 274 contrôles locaux (sans réseau ni vrai mail) à chaque envoi sur main.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  tests:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lancer les tests
+        shell: pwsh
+        run: ./src/tests/LANCER_TESTS.ps1
+      - name: Rapport
+        if: always()
+        shell: pwsh
+        run: Get-Content src/tests/RESULTATS.txt -Encoding UTF8 | Select-Object -First 60

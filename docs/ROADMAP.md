@@ -6,10 +6,12 @@
 - Mise à jour depuis l'application (`src/Updater.cs`) : recherche de la dernière Release GitHub au démarrage, notification, bouton dans Paramètres, téléchargement contrôlé (taille, SHA-256, numéro de version), remplacement après fermeture, relance.
 
 ## Publier une nouvelle version
-1. Corriger ou ajouter, puis augmenter `AppBrand.Version` (ex. `1.0.2`).
-2. `src\tests\LANCER_TESTS.ps1`, puis `src\CONSTRUIRE.ps1`.
-3. Sur GitHub : nouvelle Release, étiquette `v1.0.2` (même numéro que dans l'exe, sinon la mise à jour est refusée), joindre `Korecto.exe`.
-4. Les Korecto installés proposent la mise à jour à leur prochain démarrage.
+Tout est automatique : GitHub compile et publie (`.github/workflows/release.yml`).
+1. Corriger ou ajouter, puis augmenter `AppBrand.Version` dans `src/AppSettings.cs` (ex. `1.0.2`).
+2. Vérifier en local : `src\tests\LANCER_TESTS.ps1`.
+3. Commiter et pousser sur `main`.
+4. Poser l'étiquette et la pousser : `git tag v1.0.2` puis `git push origin v1.0.2`.
+5. GitHub compile `Korecto.exe`, vérifie que l'étiquette correspond à la version de l'exe (sinon la Release est annulée), et publie la Release. Les Korecto installés proposent la mise à jour à leur prochain démarrage.
 
 ## Idées
 - Intégration au-delà d'Outlook classique : raccourci global avec presse-papiers, champs de texte d'autres applications, extension navigateur pour les messageries web, complément pour le nouvel Outlook.
