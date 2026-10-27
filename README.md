@@ -12,7 +12,7 @@ Correcteur de mails pour Windows. Korecto lit le brouillon ouvert dans Outlook c
 
 Si Windows affiche « Windows a protégé votre ordinateur », cliquez sur « Informations complémentaires », puis « Exécuter quand même » : l'exécutable n'est pas encore signé.
 
-**Mise à jour :** quittez Korecto (clic droit sur son icône près de l'horloge, puis Quitter), téléchargez le nouvel `Korecto.exe` et double-cliquez dessus. Vos réglages sont conservés.
+**Mise à jour (depuis la version 1.0.1) :** Korecto cherche une nouvelle version peu après son démarrage. S'il en trouve une, une notification près de l'horloge propose de mettre à jour ; un clic suffit, Korecto se ferme, se remplace et se relance, réglages conservés. Le bouton « Rechercher une mise à jour » et l'option de recherche au démarrage se trouvent dans ⚙. La version 1.0.0 n'a pas cette fonction : quittez-la (clic droit sur son icône près de l'horloge, puis Quitter), téléchargez le nouvel `Korecto.exe` et double-cliquez dessus.
 
 ## Prérequis
 
@@ -37,6 +37,7 @@ Aucune clé API n'est demandée : Korecto utilise votre abonnement via le client
 - Appliquer est bloqué si la suite de chiffres, de montants ou de dates diffère de l'original, ou si le mail contient un lien, une image ou un tableau (utilisez alors Copier). Ce contrôle ne garantit pas la fidélité du sens : relisez toujours.
 - Le texte du brouillon (30 000 caractères maximum) est transmis à OpenAI ou à Anthropic selon votre choix. Rien n'est conservé par Korecto.
 - Les clients IA sont lancés sans outils, sans shell et sans mémoire de conversation.
+- Korecto ne contacte GitHub que pour chercher et télécharger ses mises à jour (aucune donnée vous concernant n'est envoyée). Le fichier téléchargé est contrôlé (taille, empreinte SHA-256 publiée par GitHub, numéro de version) avant de remplacer l'exe, et la recherche se désactive dans ⚙.
 
 ## Réglages et données
 
@@ -48,7 +49,7 @@ Sources C# (.NET Framework, compilateur fourni avec Windows) dans [`src`](src).
 
 ```powershell
 src\CONSTRUIRE.ps1            # compile src\Korecto.exe
-src\tests\LANCER_TESTS.ps1    # 251 contrôles locaux, sans réseau ni vrai mail
+src\tests\LANCER_TESTS.ps1    # 274 contrôles locaux, sans réseau ni vrai mail
 ```
 
 | Dossier | Contenu |

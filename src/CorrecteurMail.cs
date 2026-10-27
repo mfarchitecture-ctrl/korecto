@@ -14,6 +14,9 @@ using System.Windows.Forms;
 
 [assembly: System.Reflection.AssemblyTitle("Korecto")]
 [assembly: System.Reflection.AssemblyProduct("Korecto")]
+[assembly: System.Reflection.AssemblyVersion(CorrecteurMail.AppBrand.Version + ".0")]
+[assembly: System.Reflection.AssemblyFileVersion(CorrecteurMail.AppBrand.Version + ".0")]
+[assembly: System.Reflection.AssemblyInformationalVersion(CorrecteurMail.AppBrand.Version)]
 
 namespace CorrecteurMail {
     [ComImport, Guid("00000114-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -472,7 +475,8 @@ namespace CorrecteurMail {
         private readonly TableLayoutPanel layout = new TableLayoutPanel();
         private readonly ToolTip tips = new ToolTip();
         private readonly Button apply = new SoftButton(), reformulate = new SoftButton(), retry = new SoftButton { Primary = true }, pause = new SoftButton();
-        private readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
+        private readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer(), updateTimer = new System.Windows.Forms.Timer();
+        private ReleaseInfo availableUpdate;
         private readonly Debounce state = new Debounce();
         private readonly Dictionary<string, int> draftNumbers = new Dictionary<string, int>();
         // Texts Korecto already handled, per draft: a source and its strict correction, or a text
@@ -521,7 +525,7 @@ namespace CorrecteurMail {
             if (resourcesReleased) return;
             resourcesReleased = true; closing = true; timer.Stop();
             if (runner != null) runner.Dispose();
-            tray.Visible = false; tray.Dispose(); timer.Dispose(); tips.Dispose();
+            tray.Visible = false; tray.Dispose(); timer.Dispose(); updateTimer.Dispose(); tips.Dispose();
         }
         protected override void Dispose(bool disposing) {
             if (disposing) ReleaseResources();
@@ -628,9 +632,24 @@ namespace CorrecteurMail {
             UpdateAiLabel();
             Palette.Apply(this);
             timer.Interval = 250; timer.Tick += async (s,e) => await Tick(); if (!testMode) timer.Start();
+            if (!testMode) {
+                tray.BalloonTipClicked += async (s,e) => { var pending = availableUpdate; if (pending != null && !closing) await UpdateUi.Offer(this, pending, ExitApplication); };
+                updateTimer.Interval = 8000;
+                updateTimer.Tick += async (s,e) => { updateTimer.Stop(); await BackgroundUpdateCheck(); };
+                if (UpdateUi.IsInstalledCopy() && new UpdatePreference().Enabled) { Updater.CleanOldDownloads(); updateTimer.Start(); }
+            }
             FormClosed += (s,e) => ReleaseResources();
             AutoScaleDimensions = new SizeF(96, 96); ResumeLayout(true);
             Location = new Point(area.Right - Width - 20, area.Bottom - Height - 20);
+        }
+        // One quiet check shortly after launch: a balloon near the clock, never a window in the way.
+        private async Task BackgroundUpdateCheck() {
+            try {
+                var release = await Updater.CheckAsync();
+                if (release == null || closing || IsDisposed) return;
+                availableUpdate = release;
+                tray.ShowBalloonTip(15000, "Korecto " + release.Version.ToString(3) + " disponible", "Cliquez ici pour mettre à jour.", ToolTipIcon.Info);
+            } catch (Exception ex) { if (!Updater.IsKnownError(ex)) throw; }
         }
         private void UpdateAiLabel() {
             Text = AppBrand.Name + " · " + settings.ProviderName + " · " + settings.ModelName;
@@ -657,7 +676,7 @@ namespace CorrecteurMail {
             if (closing || settingsOpen) return;
             settingsOpen = true;
             try {
-                using (var dialog = new SettingsDialog(() => settings, ChooseAi, applyAi: SaveAi)) dialog.ShowDialog(this);
+                using (var dialog = new SettingsDialog(() => settings, ChooseAi, applyAi: SaveAi, checkUpdates: testMode ? (Func<Form, Task>)null : owner => UpdateUi.Interactive(owner, ExitApplication))) dialog.ShowDialog(this);
             } finally {
                 settingsOpen = false; state.Changed = DateTime.UtcNow;
                 retry.Enabled = CanCorrect;
@@ -1106,6 +1125,7 @@ namespace CorrecteurMail {
                 } return;
             }
             if (args.Length > 0 && args[0] == "--desinstaller") { SelfInstaller.RunUninstallUi(); return; }
+            if (args.Length > 0 && args[0] == "--appliquer-maj") { UpdateUi.RunApply(); return; }
             // A downloaded Korecto.exe offers to install itself; the installed copy and startup launches never ask.
             if (!startupLaunch && SelfInstaller.OfferInstall(Application.ExecutablePath)) return;
             bool created;

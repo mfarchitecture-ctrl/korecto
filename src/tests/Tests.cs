@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Net;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -671,6 +672,7 @@ namespace CorrecteurMail {
             Check("Réglages : emplacement par défaut dans le dossier de données", AiSettingsStore.DefaultPath == Path.Combine(AppFolders.Data, "ia.json") && AppearanceStore.DefaultPath == Path.Combine(AppFolders.Data, "theme.txt"));
             TestMigration(directory);
             TestInstallation(directory);
+            TestUpdates(directory);
             await Test("Version portable : correction Codex sans fichiers annexes", async () => {
                 using (var engine = new AccountRunner(() => Assembly.GetExecutingAssembly().Location, portable, 3000, AiSettings.Default(), () => new AiConnection { Connected = true })) return (await engine.Correct("FAKE_NORMAL", false)).Contains("prête");
             });
@@ -734,6 +736,63 @@ namespace CorrecteurMail {
             installer.RememberDeclined();
             Check("Installation refusée : mémorisée, plus de question", installer.Declined);
         }
+        private static string ReleaseJson(string tag, string url, long size, string digest, bool draft = false, bool prerelease = false) {
+            return "{\"tag_name\":\"" + tag + "\",\"draft\":" + (draft ? "true" : "false") + ",\"prerelease\":" + (prerelease ? "true" : "false") + ",\"assets\":[{\"name\":\"Autre.zip\",\"size\":1,\"browser_download_url\":\"https://github.com/mfarchitecture-ctrl/korecto/releases/download/" + tag + "/Autre.zip\"},{\"name\":\"Korecto.exe\",\"size\":" + size + ",\"digest\":" + (digest == null ? "null" : "\"" + digest + "\"") + ",\"browser_download_url\":\"" + url + "\"}]}";
+        }
+        private static string Sha(string file) { using (var sha = System.Security.Cryptography.SHA256.Create()) using (var s = File.OpenRead(file)) return "sha256:" + BitConverter.ToString(sha.ComputeHash(s)).Replace("-", "").ToLowerInvariant(); }
+        private static void TestUpdates(string directory) {
+            string root = Path.Combine(directory, "MAJ"); if (Directory.Exists(root)) Directory.Delete(root, true); Directory.CreateDirectory(root);
+            string good = "https://github.com/mfarchitecture-ctrl/korecto/releases/download/v9.0.0/Korecto.exe";
+            Check("Version : l'exe porte son numéro 1.0.1", AppBrand.Version == "1.0.1" && System.Diagnostics.FileVersionInfo.GetVersionInfo(Assembly.GetExecutingAssembly().Location).FileVersion == "1.0.1.0");
+            Check("Version : étiquette v1.0.2 plus récente que 1.0.1, 1.0.1 et 1.0.0 non", Updater.IsNewer("1.0.1", Updater.ParseVersion("v1.0.2")) && !Updater.IsNewer("1.0.1", Updater.ParseVersion("v1.0.1")) && !Updater.IsNewer("1.0.1", Updater.ParseVersion("1.0.0")) && Updater.IsNewer("1.0.1", Updater.ParseVersion("v1.1")) && Updater.IsNewer("1.0.9", Updater.ParseVersion("1.10.0")));
+            Check("Version : étiquettes invalides ignorées", Updater.ParseVersion("beta") == null && Updater.ParseVersion("") == null && Updater.ParseVersion(null) == null && !Updater.IsNewer("1.0.1", null) && !Updater.IsNewer("???", new Version(9, 0, 0)));
+            var release = Updater.ParseRelease(ReleaseJson("v9.0.0", good, 2048, "sha256:ABCDEF"));
+            Check("Publication : exe, taille, empreinte et version lus", release != null && release.Version == new Version(9, 0, 0) && release.AssetUrl == good && release.Size == 2048 && release.Digest == "sha256:ABCDEF");
+            Check("Publication : brouillon, préversion, JSON absurde et exe manquant ignorés", Updater.ParseRelease(ReleaseJson("v9.0.0", good, 1, null, draft: true)) == null && Updater.ParseRelease(ReleaseJson("v9.0.0", good, 1, null, prerelease: true)) == null && Updater.ParseRelease("pas du json") == null && Updater.ParseRelease("{}") == null && Updater.ParseRelease("[1,2]") == null && Updater.ParseRelease("{\"tag_name\":\"v9.0.0\",\"assets\":[]}") == null);
+            Check("Publication : adresse de téléchargement hors du dépôt refusée", Updater.ParseRelease(ReleaseJson("v9.0.0", "https://exemple.com/Korecto.exe", 1, null)) == null && Updater.ParseRelease(ReleaseJson("v9.0.0", "https://github.com/autre/depot/releases/download/v9/Korecto.exe", 1, null)) == null);
+            Check("Publication : sans empreinte fournie, la release reste utilisable", Updater.ParseRelease(ReleaseJson("v9.0.0", good, 2048, null)).Digest == null);
+            string file = Path.Combine(root, "fichier.exe"); var bytes = new byte[2048]; bytes[0] = (byte)'M'; bytes[1] = (byte)'Z'; File.WriteAllBytes(file, bytes);
+            var ok = new ReleaseInfo { Version = new Version(9, 0, 0), Size = 2048, Digest = Sha(file) };
+            Check("Contrôle du fichier : taille, programme Windows et empreinte corrects acceptés", Updater.Verify(file, ok) && Updater.Verify(file, new ReleaseInfo { Version = ok.Version }));
+            Check("Contrôle du fichier : empreinte, taille ou format incorrects refusés", !Updater.Verify(file, new ReleaseInfo { Version = ok.Version, Size = 2048, Digest = "sha256:00" }) && !Updater.Verify(file, new ReleaseInfo { Version = ok.Version, Size = 999 }) && !Updater.Verify(file, new ReleaseInfo { Version = ok.Version, Digest = "md5:abc" }));
+            bytes[0] = (byte)'X'; File.WriteAllBytes(file, bytes);
+            Check("Contrôle du fichier : fichier qui n'est pas un programme refusé, fichier absent refusé", !Updater.Verify(file, new ReleaseInfo { Version = ok.Version }) && !Updater.Verify(Path.Combine(root, "absent.exe"), ok));
+            string self = Assembly.GetExecutingAssembly().Location;
+            Check("Contrôle de version : l'exe annonce au moins la version publiée", Updater.AnnouncesVersion(self, new ReleaseInfo { Version = new Version(1, 0, 1) }) && !Updater.AnnouncesVersion(self, new ReleaseInfo { Version = new Version(9, 0, 0) }) && !Updater.AnnouncesVersion(file, new ReleaseInfo { Version = new Version(1, 0, 1) }));
+            var found = Updater.CheckAsync(url => ReleaseJson("v9.0.0", good, 2048, null)).GetAwaiter().GetResult();
+            Check("Recherche : version plus récente trouvée", found != null && found.Version == new Version(9, 0, 0));
+            Check("Recherche : même version ou réponse inutilisable : à jour", Updater.CheckAsync(url => ReleaseJson("v1.0.1", good.Replace("9.0.0", "1.0.1"), 1, null)).GetAwaiter().GetResult() == null && Updater.CheckAsync(url => "n'importe quoi").GetAwaiter().GetResult() == null);
+            bool network = false; try { Updater.CheckAsync(url => { throw new WebException("hors ligne"); }).GetAwaiter().GetResult(); } catch (Exception ex) { network = Updater.IsKnownError(ex); }
+            Check("Recherche : erreur réseau reconnue pour un message clair", network);
+            var downloadable = new ReleaseInfo { Version = new Version(1, 0, 1), AssetUrl = good, Size = new FileInfo(self).Length, Digest = Sha(self) };
+            string folder = Path.Combine(root, "telechargement");
+            string path = Updater.DownloadForUpdate(downloadable, (url, target) => File.Copy(self, target), folder).GetAwaiter().GetResult();
+            Check("Téléchargement : exe vérifié placé dans le dossier de mise à jour", path == Path.Combine(folder, "Korecto.exe") && File.Exists(path) && Sha(path) == downloadable.Digest);
+            string failure = null; try { Updater.DownloadForUpdate(downloadable, (url, target) => File.WriteAllBytes(target, new byte[3000]), folder).GetAwaiter().GetResult(); } catch (Exception ex) { failure = ex.Message; }
+            Check("Téléchargement : fichier corrompu refusé", failure != null && failure.Contains("incomplet"));
+            failure = null; try { Updater.DownloadForUpdate(new ReleaseInfo { Version = new Version(9, 0, 0), AssetUrl = good, Size = downloadable.Size, Digest = downloadable.Digest }, (url, target) => File.Copy(self, target), folder).GetAwaiter().GetResult(); } catch (Exception ex) { failure = ex.Message; }
+            Check("Téléchargement : exe dont le numéro ne correspond pas à la release refusé", failure != null && failure.Contains("numéro"));
+            Check("Attente : fin détectée, délai dépassé signalé", Updater.WaitUntil(MakeCountdown(3), 2000, 10) && !Updater.WaitUntil(() => false, 150, 10));
+            string programs = Path.Combine(root, "Programs"), data = Path.Combine(root, "Data");
+            var registry = new FakeInstallRegistry(); var installer = new SelfInstaller(programs, data, Path.Combine(root, "Menu"), registry, f => Directory.Delete(f, true));
+            installer.Install(self); Directory.CreateDirectory(data); File.WriteAllText(Path.Combine(data, "ia.json"), "{\"Provider\":\"claude\",\"Model\":\"haiku\"}");
+            string newer = Path.Combine(root, "nouveau", "Korecto.exe"); Directory.CreateDirectory(Path.GetDirectoryName(newer)); File.WriteAllBytes(newer, File.ReadAllBytes(self)); File.AppendAllText(newer, "x");
+            var polls = MakeCountdown(3);
+            Updater.ApplyAndRestart(newer, installer, () => !polls(), 3000);
+            Check("Application : attend la fermeture, remplace l'exe installé, réglages conservés", Sha(installer.InstalledExe) == Sha(newer) && File.ReadAllText(Path.Combine(data, "ia.json")).Contains("haiku"));
+            failure = null; try { Updater.ApplyAndRestart(newer, installer, () => true, 300); } catch (InvalidOperationException ex) { failure = ex.Message; }
+            Check("Application : si Korecto reste ouvert, rien n'est remplacé", failure != null && failure.Contains("fermé"));
+            var pref = new UpdatePreference(Path.Combine(root, "prefs"));
+            bool initial = pref.Enabled; pref.Save(false); bool off = !pref.Enabled; pref.Save(true);
+            Check("Réglage : recherche au démarrage activée par défaut, désactivable puis réactivable", initial && off && pref.Enabled);
+            using (var dialog = new SettingsDialog(() => AiSettings.Default(), (o, c) => null, new StartupPreference(new FakeStartupStore()), updatePreference: pref)) {
+                Check("Paramètres : version affichée, bouton de recherche inactif sans fonction de recherche", dialog.UpdateNow.Enabled == false && dialog.Updates.Checked);
+            }
+            using (var dialog = new SettingsDialog(() => AiSettings.Default(), (o, c) => null, new StartupPreference(new FakeStartupStore()), updatePreference: pref, checkUpdates: f => Task.FromResult(true))) {
+                Check("Paramètres : bouton de recherche actif avec fonction de recherche", dialog.UpdateNow.Enabled);
+            }
+        }
+        private static Func<bool> MakeCountdown(int polls) { int left = polls; return () => --left <= 0; }
         private static async Task Capture(string directory) {
             bool originalTheme = Palette.IsDark; Palette.Use(true);
             using (var r = new Rig()) {

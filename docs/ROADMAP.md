@@ -1,29 +1,22 @@
-# Feuille de route : vers un logiciel propre
+# Feuille de route
 
-Objectif (Maxime, 27/10/2026) : numéro de version, mise à jour depuis l'application, le plus automatique possible. Rien de ceci n'est fait ; l'ordre ci-dessous évite de refaire du travail.
+## Fait
+- Numéro de version unique (`AppBrand.Version` dans `src/AppSettings.cs`), affiché dans Paramètres et dans les Applications de Windows.
+- Installation, désinstallation et mise à jour par l'exe lui-même (`src/Installation.cs`).
+- Mise à jour depuis l'application (`src/Updater.cs`) : recherche de la dernière Release GitHub au démarrage, notification, bouton dans Paramètres, téléchargement contrôlé (taille, SHA-256, numéro de version), remplacement après fermeture, relance.
 
-## 1. Numéro de version
-- Une seule source de vérité : `[assembly: AssemblyVersion/AssemblyInformationalVersion]` dans `CorrecteurMail.cs`, lue par `CONSTRUIRE.ps1` et par l'installateur.
-- Affichée dans Paramètres et dans l'entrée « Applications » de Windows (`DisplayVersion`).
-- Étiquettes Git `v1.0.0`, `v1.1.0`… une par version livrée (versionnage sémantique).
+## Publier une nouvelle version
+1. Corriger ou ajouter, puis augmenter `AppBrand.Version` (ex. `1.0.2`).
+2. `src\tests\LANCER_TESTS.ps1`, puis `src\CONSTRUIRE.ps1`.
+3. Sur GitHub : nouvelle Release, étiquette `v1.0.2` (même numéro que dans l'exe, sinon la mise à jour est refusée), joindre `Korecto.exe`.
+4. Les Korecto installés proposent la mise à jour à leur prochain démarrage.
 
-## 2. Fabrication d'une livraison
-- Script unique : compile, lance les tests, fabrique `Korecto.exe` de la version et son empreinte SHA-256. La Release ne contient que cet exe : il s'installe lui-même.
-- Notes de version (`CHANGELOG.md`).
+## Idées
+- Intégration au-delà d'Outlook classique : raccourci global avec presse-papiers, champs de texte d'autres applications, extension navigateur pour les messageries web, complément pour le nouvel Outlook.
+- Signature de code de l'exe (supprime l'avertissement SmartScreen ; environ 100 à 400 € par an).
+- Licence du dépôt (à choisir).
 
-## 3. Diffusion (décision à prendre)
-- Releases GitHub : exigent un dépôt public, ou un second dépôt public `korecto-releases` si le code reste privé.
-- Alternative simple pour quelques proches : lien de partage vers le ZIP, sans détection de version.
-
-## 4. Mise à jour dans l'application
-- Étape A : vérification au lancement (et bouton « Rechercher une mise à jour ») de la dernière Release ; message « Version X disponible » avec lien. Aucun téléchargement automatique.
-- Étape B : téléchargement, vérification SHA-256, puis remplacement de l'exe installé (la logique d'installation et de mise à jour est déjà dans Installation.cs) après fermeture de l'appli, et relance. Réglages conservés.
-- Contraintes : désactivable dans Paramètres, aucun envoi de données personnelles, échec silencieux sans réseau.
-
-## 5. Confiance Windows
-- L'exe n'est pas signé : SmartScreen avertit au premier lancement. Une signature de code (environ 100 à 400 € par an) supprime l'avertissement et est conseillée avant une diffusion large.
-
-## 6. Qualité restante (indépendante de ce qui précède)
-- Valider dans un vrai Outlook : aperçu, changements de brouillon, Appliquer avec signature et mise en forme, réponses intégrées.
-- Essai réel de Luna et de Haiku ; mesure de la consommation par correction.
-- Installation réelle chez un second utilisateur Windows.
+## À valider en conditions réelles
+- Lecture et application dans un vrai Outlook : signature, listes, tableaux, réponses intégrées.
+- Une mise à jour réelle d'une version à la suivante, avec les fenêtres à l'écran.
+- Essai réel de Luna et de Haiku, consommation par correction.

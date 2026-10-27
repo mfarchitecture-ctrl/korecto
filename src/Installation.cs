@@ -59,7 +59,7 @@ namespace CorrecteurMail {
             // Windows startup: moved to the installed program only if it was already enabled.
             if (!String.IsNullOrWhiteSpace(registry.ReadRun())) registry.WriteRun(LocalCommand.Quote(InstalledExe) + " --startup");
             registry.WriteUninstall(new Dictionary<string, object> {
-                { "DisplayName", "Korecto" }, { "Publisher", "Maxime Ferrand" }, { "InstallLocation", ProgramsFolder },
+                { "DisplayName", "Korecto" }, { "DisplayVersion", AppBrand.Version }, { "Publisher", "Maxime Ferrand" }, { "InstallLocation", ProgramsFolder },
                 { "DisplayIcon", InstalledExe }, { "UninstallString", LocalCommand.Quote(InstalledExe) + " --desinstaller" },
                 { "NoModify", 1 }, { "NoRepair", 1 }
             });
