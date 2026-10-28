@@ -12,7 +12,10 @@ if (/[^MLZ\d.\s-]/i.test(contour)) throw Error('Commandes de contour non prises 
 const coordinates = contour.match(/-?\d+(?:\.\d+)?/g).map(Number);
 const xs = [], ys = [];
 for (let i = 0; i < coordinates.length; i += 2) { xs.push(coordinates[i]); ys.push(coordinates[i + 1]); }
-const dx = 64 - (Math.min(...xs) + Math.max(...xs)) / 2;
+// The thick stem on the left makes the K look shifted left although its bounds are centered:
+// shift it right so the visual weight sits nearer the middle (full balance would crowd the arms).
+const OPTICAL_SHIFT = 3.5;
+const dx = 64 - (Math.min(...xs) + Math.max(...xs)) / 2 + OPTICAL_SHIFT;
 const dy = 64 - (Math.min(...ys) + Math.max(...ys)) / 2;
 const mark = (color) => `<path transform="translate(${dx.toFixed(3)} ${dy.toFixed(3)})" fill="${color}" d="${contour}"/>`;
 const svg = (variant) => `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 128 128">${variant === 'couleur' ? '<rect x="4" y="4" width="120" height="120" rx="28" fill="#087F83"/>' : ''}${mark(variant === 'sombre' ? '#18282B' : '#FFFFFF')}</svg>`;
