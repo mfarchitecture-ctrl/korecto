@@ -1043,7 +1043,7 @@ namespace CorrecteurMail {
                     // Replace only the captured author range, never subject, recipients or attachments.
                     string corrected = proposal.Text.Replace("\r\n", "\r").Replace("\n", "\r");
                     if (draft.Text.EndsWith("\r") && !corrected.EndsWith("\r")) corrected += "\r";
-                    ReplaceDraftText(draft, corrected);
+                    int linksKept = ReplaceDraftText(draft, corrected);
                     // Undoing an applied reformulation restores a source with no strict correction: still no new request.
                     Remember(draft.Key, draft.Text, null, false);
                     long oldVersion = state.Version;
@@ -1053,7 +1053,7 @@ namespace CorrecteurMail {
                     resultVersion = state.Version; resultKey = state.Key; resultSource = state.Text;
                     correctedVersion = state.Version;
                     Remember(state.Key, state.Text, null, false);
-                    requested = state.Version; UpdateProposalActions(); status.Text = "Proposition appliquée · original et variantes conservés ici.";
+                    requested = state.Version; UpdateProposalActions(); status.Text = linksKept > 0 ? "Proposition appliquée · liens et mentions gardés tels quels." : "Proposition appliquée · original et variantes conservés ici.";
                 } catch (Exception ex) { status.Text = ex.Message == ComplexDraft ? ComplexDraft : "Application impossible. Le brouillon reste à vérifier dans OUTLOOK."; }
             }
         }
@@ -1067,21 +1067,17 @@ namespace CorrecteurMail {
             end = original.Length - tail;
             inserted = replacement.Substring(start, replacement.Length - tail - start);
         }
-        internal const string ComplexDraft = "Lien, image ou tableau dans ce mail · Appliquer bloqué pour ne pas l’abîmer. Utilisez Copier.";
-        internal static void ReplaceDraftText(Draft draft, string corrected) {
-            if (draft.Document == null) { ((dynamic)draft.Range).Text = corrected; return; } // isolated test draft
+        internal const string ComplexDraft = "Image, tableau ou lien inhabituel dans ce mail · Appliquer bloqué pour ne pas l’abîmer. Utilisez Copier.";
+        // Returns the number of changes left out because they fell inside a link.
+        internal static int ReplaceDraftText(Draft draft, string corrected) {
+            if (draft.Document == null) { ((dynamic)draft.Range).Text = corrected; return 0; } // isolated test draft
             int origin = (int)((dynamic)draft.Range).Start;
-            // Word positions also count hidden field codes (links): offsets taken from Range.Text would shift.
-            if ((int)((dynamic)draft.Range).End - origin != draft.Text.Length) throw new InvalidOperationException(ComplexDraft);
-            // Preserve unchanged paragraph marks and their formatting, especially the
-            // final mark next to a signature or quoted-message border.
-            var before = draft.Text.Split('\r'); var after = corrected.Split('\r');
-            var edits = new List<Tuple<int, int, string>>();
-            if (before.Length == after.Length) {
-                int offset = 0;
-                for (int i = 0; i < before.Length; i++) { PlanSegment(edits, offset, before[i], after[i]); offset += before[i].Length + 1; }
-            } else PlanSegment(edits, 0, draft.Text, corrected);
-            if (edits.Count == 0) return;
+            // Links and @mentions are Word fields: their hidden code counts in Word positions, not in Range.Text.
+            var links = Links(draft, origin);
+            int hidden = 0; foreach (var link in links) hidden += link[2];
+            if ((int)((dynamic)draft.Range).End - origin - hidden != draft.Text.Length) throw new InvalidOperationException(ComplexDraft);
+            int skipped; var edits = PlanEdits(draft.Text, corrected, links, out skipped);
+            if (edits.Count == 0) return skipped;
             // One Ctrl+Z in Outlook must undo the whole proposal, not one paragraph at a time
             // (intermediate texts would look new and trigger a correction). Word 2010 and later.
             object word = null, undo = null;
@@ -1090,22 +1086,85 @@ namespace CorrecteurMail {
             catch (Microsoft.CSharp.RuntimeBinder.RuntimeBinderException) { Native.Release(undo); undo = null; }
             finally { Native.Release(word); }
             try {
-                // Every segment is checked before the first write: a refusal never leaves a half-applied draft.
+                // Every change is checked before the first write: a refusal never leaves a half-applied draft.
                 for (int i = edits.Count - 1; i >= 0; i--) {
                     object changedRange = null;
-                    try { changedRange = ((dynamic)draft.Document).Range(origin + edits[i].Item1, origin + edits[i].Item2); ((dynamic)changedRange).Text = edits[i].Item3; }
+                    try { changedRange = ((dynamic)draft.Document).Range(WordPosition(origin, links, edits[i].Item1), WordPosition(origin, links, edits[i].Item2)); ((dynamic)changedRange).Text = edits[i].Item3; }
                     finally { Native.Release(changedRange); }
                 }
             } finally {
                 if (undo != null) { try { ((dynamic)undo).EndCustomRecord(); } catch (COMException) { } Native.Release(undo); }
             }
+            return skipped;
         }
-        private static void PlanSegment(List<Tuple<int, int, string>> edits, int offset, string original, string replacement) {
+        // Each field as { label start, label end } in Range.Text offsets, plus the length Word hides around the label.
+        private static List<int[]> Links(Draft draft, int origin) {
+            var links = new List<int[]>(); int hidden = 0, previousEnd = 0;
+            object fields = null;
+            try {
+                fields = ((dynamic)draft.Range).Fields; int count = (int)((dynamic)fields).Count;
+                for (int i = 1; i <= count; i++) {
+                    object field = null, code = null, label = null;
+                    try {
+                        field = ((dynamic)fields).Item(i); code = ((dynamic)field).Code; label = ((dynamic)field).Result;
+                        int begin = (int)((dynamic)code).Start - 1 - origin, separator = (int)((dynamic)label).Start - origin, close = (int)((dynamic)label).End - origin;
+                        int start = begin - hidden, end = start + close - separator;
+                        if (begin < previousEnd || separator <= begin || close < separator || start < 0 || end > draft.Text.Length || draft.Text.Substring(start, end - start) != Convert.ToString(((dynamic)label).Text)) throw new InvalidOperationException(ComplexDraft);
+                        links.Add(new [] { start, end, separator - begin + 1 });
+                        hidden += separator - begin + 1; previousEnd = close + 1;
+                    } finally { Native.Release(label); Native.Release(code); Native.Release(field); }
+                }
+            } finally { Native.Release(fields); }
+            return links;
+        }
+        // A position at a label's start stays before its field; one at its end goes after the field.
+        private static int WordPosition(int origin, List<int[]> links, int offset) {
+            int position = origin + offset;
+            foreach (var link in links) if (link[1] <= offset) position += link[2];
+            return position;
+        }
+        // Changes word by word; a change inside a link is left out, the link stays exactly as it is.
+        internal static List<Tuple<int, int, string>> PlanEdits(string original, string replacement, List<int[]> links, out int skipped) {
+            var kept = new List<Tuple<int, int, string>>(); skipped = 0;
+            foreach (var edit in Differences(original, replacement)) {
+                if (links.Exists(link => edit.Item1 < link[1] && edit.Item2 > link[0] || edit.Item1 == edit.Item2 && link[0] < edit.Item1 && edit.Item1 < link[1])) { skipped++; continue; }
+                var last = kept.Count == 0 ? null : kept[kept.Count - 1];
+                // Neighbouring changes of one paragraph form one write, unless a link lies between them.
+                if (last != null && original.IndexOf('\r', last.Item2, edit.Item1 - last.Item2) < 0 && !links.Exists(link => link[0] < edit.Item1 && link[1] > last.Item2))
+                    kept[kept.Count - 1] = Tuple.Create(last.Item1, edit.Item2, last.Item3 + original.Substring(last.Item2, edit.Item1 - last.Item2) + edit.Item3);
+                else kept.Add(edit);
+            }
+            var edits = new List<Tuple<int, int, string>>();
+            foreach (var edit in kept) {
+                int start, end; string inserted; TextChange(original.Substring(edit.Item1, edit.Item2 - edit.Item1), edit.Item3, out start, out end, out inserted);
+                if (start == end && inserted.Length == 0) continue;
+                // Word marks images, tables and fields with control characters; rewriting them would delete the object.
+                if (Regex.IsMatch(original.Substring(edit.Item1 + start, end - start) + inserted, @"[\x00-\x08\x0E-\x1F]")) throw new InvalidOperationException(ComplexDraft);
+                edits.Add(Tuple.Create(edit.Item1 + start, edit.Item1 + end, inserted));
+            }
+            return edits;
+        }
+        private static readonly Regex Token = new Regex(@"\r|[^\S\r]+|\w+|[\uD800-\uDBFF][\uDC00-\uDFFF]|[^\w\s]");
+        // Changed runs of words between the two texts (longest common sequence of words).
+        private static List<Tuple<int, int, string>> Differences(string original, string replacement) {
+            var result = new List<Tuple<int, int, string>>();
             int start, end; string inserted; TextChange(original, replacement, out start, out end, out inserted);
-            if (start == end && inserted.Length == 0) return;
-            // Word marks images, tables and fields with control characters; rewriting them would delete the object.
-            if (Regex.IsMatch(original.Substring(start, end - start) + inserted, @"[\x00-\x08\x0E-\x1F]")) throw new InvalidOperationException(ComplexDraft);
-            edits.Add(Tuple.Create(offset + start, offset + end, inserted));
+            if (start == end && inserted.Length == 0) return result;
+            var a = Token.Matches(original.Substring(start, end - start)); var b = Token.Matches(inserted);
+            if ((long)a.Count * b.Count > 4000000) { result.Add(Tuple.Create(start, end, inserted)); return result; }
+            var common = new int[a.Count + 1, b.Count + 1];
+            for (int i = a.Count - 1; i >= 0; i--) for (int j = b.Count - 1; j >= 0; j--)
+                common[i, j] = a[i].Value == b[j].Value ? common[i + 1, j + 1] + 1 : Math.Max(common[i + 1, j], common[i, j + 1]);
+            int x = 0, y = 0, fromA = 0, fromB = 0;
+            while (x < a.Count || y < b.Count) {
+                if (x < a.Count && y < b.Count && a[x].Value == b[y].Value) {
+                    if (a[x].Index > fromA || b[y].Index > fromB) result.Add(Tuple.Create(start + fromA, start + a[x].Index, inserted.Substring(fromB, b[y].Index - fromB)));
+                    fromA = a[x].Index + a[x].Length; fromB = b[y].Index + b[y].Length; x++; y++;
+                } else if (y >= b.Count || x < a.Count && common[x + 1, y] >= common[x, y + 1]) x++;
+                else y++;
+            }
+            if (end - start > fromA || inserted.Length > fromB) result.Add(Tuple.Create(start + fromA, end, inserted.Substring(fromB)));
+            return result;
         }
     }
     internal static class Program {

@@ -35,7 +35,8 @@ Aucune clé API n'est demandée : Korecto utilise votre abonnement via le client
 ## Garde-fous
 
 - Aucun envoi de mail, aucune modification des destinataires, de l'objet ou des pièces jointes.
-- Appliquer est bloqué si la suite de chiffres, de montants ou de dates diffère de l'original, ou si le mail contient un lien, une image ou un tableau (utilisez alors Copier). Ce contrôle ne garantit pas la fidélité du sens : relisez toujours.
+- Les liens et les mentions (@) ne sont jamais modifiés par Appliquer : ils restent tels quels, même si la proposition y corrige une faute.
+- Appliquer est bloqué si la suite de chiffres, de montants ou de dates diffère de l'original, ou si la correction touche une image ou un tableau (utilisez alors Copier). Ce contrôle ne garantit pas la fidélité du sens : relisez toujours.
 - Le texte du brouillon (30 000 caractères maximum) est transmis à OpenAI ou à Anthropic selon votre choix. Rien n'est conservé par Korecto.
 - Les clients IA sont lancés sans outils, sans shell et sans mémoire de conversation.
 - Korecto ne contacte GitHub que pour chercher et télécharger ses mises à jour (aucune donnée vous concernant n'est envoyée). Le fichier téléchargé est contrôlé (taille, empreinte SHA-256 publiée par GitHub, numéro de version) avant de remplacer l'exe, et la recherche se désactive dans ⚙.

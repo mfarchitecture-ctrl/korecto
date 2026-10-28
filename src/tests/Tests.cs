@@ -45,6 +45,21 @@ namespace CorrecteurMail {
             if (document.Application.UndoRecord.Open) document.Application.UndoRecord.WritesInside++;
             document.Replaced.Add(Text); document.Text =document.Text.Substring(0, Start) + value + document.Text.Substring(End);
         } }
+        // Like Word: a link is \x13 code \x14 label \x15, and Range.Text of the draft shows only the label.
+        public FakeFields Fields { get {
+            var fields = new FakeFields();
+            for (int begin = document.Text.IndexOf('\x13', Start); begin >= 0 && begin < End; begin = document.Text.IndexOf('\x13', begin + 1)) {
+                int separator = document.Text.IndexOf('\x14', begin), close = document.Text.IndexOf('\x15', begin);
+                fields.Items.Add(new FakeField { Code = new FakeWordSpan(document, begin + 1, separator), Result = new FakeWordSpan(document, separator + 1, close) });
+            }
+            return fields;
+        } }
+    }
+    public sealed class FakeField { public FakeWordSpan Code { get; set; } public FakeWordSpan Result { get; set; } }
+    public sealed class FakeFields {
+        public readonly List<FakeField> Items = new List<FakeField>();
+        public int Count { get { return Items.Count; } }
+        public FakeField Item(int index) { return Items[index - 1]; }
     }
     internal sealed class FakeStartupStore : IStartupStore {
         internal string Value;
@@ -347,12 +362,27 @@ namespace CorrecteurMail {
                 Popup.ReplaceDraftText(new Draft { Text = document.Text, Document = document, Range = document.Range(0, document.Text.Length) }, document.Text);
                 return Value(document.Replaced.Count == 0);
             });
-            await Test("Appliquer refuse un mail avec lien masqué, sans rien modifier", () => {
-                // Word counts the hidden HYPERLINK code in positions while Range.Text shows only the label.
+            await Test("Appliquer corrige autour d'un lien et d'une mention, gardés tels quels même avec une faute", () => {
+                string mention = "\x13HYPERLINK \"mailto:n.sacquet@exemple.fr\"\x14@Nicolas SACQUET\x15", link = "\x13HYPERLINK \"https://exemple.fr\"\x14lein\x15";
+                var document = new FakeWordDocument { Text = "Bonjour " + mention + " nous a demander le plan.\rVoir le " + link + " et les document.\rSIGNATURE\r" };
+                string original = "Bonjour @Nicolas SACQUET nous a demander le plan.\rVoir le lein et les document.\r";
+                var draft = new Draft { Text = original, Document = document, Range = document.Range(0, document.Text.Length - "SIGNATURE\r".Length) };
+                int kept = Popup.ReplaceDraftText(draft, "Bonjour Nicolas Sacquet nous a demandé le plan.\rVoir le lien et les documents.\r");
+                bool untouched = true; foreach (string replaced in document.Replaced) if (replaced.IndexOfAny(new [] { '\x13', '\x14', '\x15' }) >= 0) untouched = false;
+                return Value(kept > 0 && untouched && document.Text == "Bonjour " + mention + " nous a demandé le plan.\rVoir le " + link + " et les documents.\rSIGNATURE\r");
+            });
+            await Test("Appliquer : lien supprimé par l'IA remis en place, texte avant et après corrigé", () => {
+                string link = "\x13HYPERLINK \"https://exemple.fr\"\x14le site\x15";
+                var document = new FakeWordDocument { Text = "Les plan sont sur " + link + " depuis hier.\r" };
+                var draft = new Draft { Text = "Les plan sont sur le site depuis hier.\r", Document = document, Range = document.Range(0, document.Text.Length) };
+                Popup.ReplaceDraftText(draft, "Les plans sont en ligne depuis hier.\r");
+                return Value(document.Text.Contains(link) && document.Text.StartsWith("Les plans sont"));
+            });
+            await Test("Appliquer refuse un lien que Word décrit autrement, sans rien modifier", () => {
                 var document = new FakeWordDocument { Text = "Voir le \x13HYPERLINK \"https://exemple.fr\"\x14lien\x15.\rLes document sont prêt.\r" };
                 string before = document.Text, refusal = null;
-                var draft = new Draft { Text = "Voir le lien.\rLes document sont prêt.\r", Document = document, Range = document.Range(0, document.Text.Length) };
-                try { Popup.ReplaceDraftText(draft, "Voir le lien.\rLes documents sont prêts.\r"); } catch (InvalidOperationException ex) { refusal = ex.Message; }
+                var draft = new Draft { Text = "Voir le site.\rLes document sont prêt.\r", Document = document, Range = document.Range(0, document.Text.Length) };
+                try { Popup.ReplaceDraftText(draft, "Voir le site.\rLes documents sont prêts.\r"); } catch (InvalidOperationException ex) { refusal = ex.Message; }
                 return Value(refusal == Popup.ComplexDraft && document.Text == before && document.Replaced.Count == 0);
             });
             await Test("Appliquer refuse de toucher une image incorporée, sans écriture partielle", () => {
