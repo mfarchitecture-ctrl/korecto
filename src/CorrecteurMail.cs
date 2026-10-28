@@ -644,7 +644,7 @@ namespace CorrecteurMail {
             // Avis: a question about the draft, the answer, then a reformulation that follows it or a tone shortcut. Nothing leaves before a click.
             // Empty field with a muted hint; an empty question asks for a general opinion.
             adviceQuestion.Hint = "Votre question (vide = avis général)";
-            adviceBox.Hint = "Posez une question sur votre mail : « trop agressif ? », « assez clair ? », « le bon ton pour un client ? »… L’IA répond franchement, puis vous pouvez reformuler dans le sens de son avis.";
+            adviceBox.Hint = "Posez une question sur votre mail. Exemples : « Le ton est-il adapté ? », « Le message est-il clair ? », « Est-il trop direct ? ». Vous pourrez ensuite le reformuler dans le sens de la réponse.";
             adviceQuestion.MaxLength = 300; adviceQuestion.Font = new Font("Segoe UI", 10); adviceQuestion.BorderStyle = BorderStyle.FixedSingle;
             adviceQuestion.Dock = DockStyle.Fill; adviceQuestion.Margin = new Padding(0, 4, 8, 0);
             adviceQuestion.KeyDown += (s,e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; adviceAsk.PerformClick(); } };
