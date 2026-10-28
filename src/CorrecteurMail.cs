@@ -374,7 +374,7 @@ namespace CorrecteurMail {
         internal static void Apply(Control control) {
             bool muted = control.Tag as string == "theme-muted" || control.ForeColor.ToArgb() == Muted.ToArgb();
             if (control is Label && muted) control.Tag = "theme-muted";
-            control.BackColor = control is TextBox || control is TabPage || control is ComboBox ? Surface : Background;
+            control.BackColor = control is TextBox || control is RichTextBox || control is TabPage || control is ComboBox || control.Tag as string == "surface" ? Surface : Background;
             control.ForeColor = control is Label && muted ? Muted : Text;
             if (control.Tag as string == "theme-toggle") {
                 control.Text = "";
@@ -488,6 +488,8 @@ namespace CorrecteurMail {
         private readonly Button theme;
         private readonly TextBox result = new TextBox(), reformulated = new TextBox(), adviceQuestion = new TextBox(), adviceBox = new TextBox();
         private readonly Button adviceAsk = new SoftButton(), adviceReformulate = new SoftButton();
+        private readonly List<Button> toneButtons = new List<Button>();
+        private readonly RichTextBox resultView = new RichTextBox();
         private readonly TextBox manualInput = new TextBox();
         private readonly TabControl textTabs = new DarkTabs();
         private readonly TabPage inputPage = new TabPage("Texte d’origine"), resultPage = new TabPage("Corrigé"), reformulationPage = new TabPage("Reformulé"), advicePage = new TabPage("Avis");
@@ -622,25 +624,49 @@ namespace CorrecteurMail {
                 reformulate.Enabled = !busy && !paused && !String.IsNullOrWhiteSpace(manualInput.Text); textTabs.SelectedTab = inputPage;
                 status.Text = "Texte manuel · cliquez sur Corriger.";
             };
-            inputPage.Controls.Add(manualInput); resultPage.Controls.Add(result); reformulationPage.Controls.Add(reformulated);
-            // Avis: a question about the draft, the answer, then a reformulation that follows it. Nothing leaves before a click.
+            // Corrigé shows the proposal with the changed words highlighted; the hidden text box stays the text that is copied and applied.
+            result.Visible = false;
+            resultView.Dock = DockStyle.Fill; resultView.ReadOnly = true; resultView.ScrollBars = RichTextBoxScrollBars.Vertical; resultView.BorderStyle = BorderStyle.None; resultView.DetectUrls = false; resultView.Font = new Font("Segoe UI", 11);
+            resultView.BackColorChanged += (s,e) => RefreshChanges();
+            result.TextChanged += (s,e) => resultView.Text = result.Text;
+            inputPage.Controls.Add(manualInput); resultPage.Controls.Add(resultView); resultPage.Controls.Add(result); reformulationPage.Controls.Add(reformulated);
+            // Avis: a question about the draft, the answer, then a reformulation that follows it or a tone shortcut. Nothing leaves before a click.
             adviceQuestion.Text = "Donne ton avis sur ce mail."; adviceQuestion.MaxLength = 300; adviceQuestion.Font = new Font("Segoe UI", 10); adviceQuestion.BorderStyle = BorderStyle.FixedSingle;
-            adviceQuestion.Dock = DockStyle.Top; adviceQuestion.Margin = new Padding(0, 0, 0, 6);
+            adviceQuestion.Dock = DockStyle.Fill; adviceQuestion.Margin = new Padding(0, 4, 8, 0);
             adviceQuestion.KeyDown += (s,e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; adviceAsk.PerformClick(); } };
-            adviceAsk.Text = "Demander l’avis"; adviceAsk.Dock = DockStyle.Top; adviceAsk.Height = 38; adviceAsk.Margin = new Padding(0, 0, 0, 6); adviceAsk.Enabled = false;
+            adviceAsk.Text = "Demander l’avis"; adviceAsk.Dock = DockStyle.Fill; adviceAsk.Margin = Padding.Empty; adviceAsk.Enabled = false;
             adviceAsk.Click += async (s,e) => await RequestAdvice();
             tips.SetToolTip(adviceAsk, "Envoie le brouillon et votre question à l’IA. Rien n’est modifié dans le mail.");
-            adviceBox.Dock = DockStyle.Fill; adviceBox.Multiline = true; adviceBox.ReadOnly = true; adviceBox.ScrollBars = ScrollBars.Vertical; adviceBox.BorderStyle = BorderStyle.None; adviceBox.MaxLength = 0; adviceBox.Font = new Font("Segoe UI", 11);
-            adviceReformulate.Text = "Reformuler selon cet avis"; adviceReformulate.Dock = DockStyle.Bottom; adviceReformulate.Height = 40; adviceReformulate.Margin = new Padding(0, 6, 0, 0); adviceReformulate.Enabled = false;
+            adviceBox.Dock = DockStyle.Fill; adviceBox.Multiline = true; adviceBox.ReadOnly = true; adviceBox.ScrollBars = ScrollBars.Vertical; adviceBox.BorderStyle = BorderStyle.None; adviceBox.MaxLength = 0; adviceBox.Font = new Font("Segoe UI", 11); adviceBox.Margin = new Padding(0, 8, 0, 8);
+            adviceReformulate.Text = "Reformuler selon cet avis"; adviceReformulate.Dock = DockStyle.Fill; adviceReformulate.Margin = Padding.Empty; adviceReformulate.Enabled = false;
             adviceReformulate.Click += async (s,e) => await RequestCore(true, adviceBox.Text);
-            // Docking: the control added first fills what the others leave.
-            advicePage.Controls.Add(adviceBox); advicePage.Controls.Add(adviceReformulate); advicePage.Controls.Add(adviceAsk); advicePage.Controls.Add(adviceQuestion);
+            var tones = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, Margin = new Padding(0, 6, 0, 0), Tag = "surface" };
+            tones.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            foreach (var tone in new [] {
+                new [] { "Plus ferme", "Reformule avec un ton plus ferme et plus direct, sans devenir agressif ni impoli." },
+                new [] { "Plus doux", "Reformule avec un ton plus doux et plus chaleureux, sans devenir familier." },
+                new [] { "Plus court", "Raccourcis le texte : garde l'essentiel, supprime les répétitions et les formules inutiles." },
+                new [] { "Plus formel", "Reformule avec un ton plus formel et plus soutenu, sans lourdeur." } }) {
+                string instruction = tone[1];
+                var toneButton = new SoftButton { Text = tone[0], Dock = DockStyle.Fill, Margin = new Padding(0, 0, 6, 0), Font = new Font("Segoe UI", 9), Enabled = false };
+                toneButton.Click += async (s,e) => await RequestCore(true, instruction);
+                tones.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25)); tones.Controls.Add(toneButton); toneButtons.Add(toneButton);
+            }
+            var adviceLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 4, Margin = Padding.Empty, Tag = "surface" };
+            adviceLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); adviceLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+            adviceLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36)); adviceLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); adviceLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40)); adviceLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+            adviceLayout.Controls.Add(adviceQuestion, 0, 0); adviceLayout.Controls.Add(adviceAsk, 1, 0);
+            adviceLayout.Controls.Add(adviceBox, 0, 1); adviceLayout.SetColumnSpan(adviceBox, 2);
+            adviceLayout.Controls.Add(adviceReformulate, 0, 2); adviceLayout.SetColumnSpan(adviceReformulate, 2);
+            adviceLayout.Controls.Add(tones, 0, 3); adviceLayout.SetColumnSpan(tones, 2);
+            advicePage.Controls.Add(adviceLayout);
             textTabs.Dock = DockStyle.Fill; textTabs.TabPages.AddRange(new [] { inputPage, resultPage, reformulationPage, advicePage }); textTabs.Visible = false;
             // Corrigé and Reformulé open only once a first proposal exists; Avis as soon as there is a text.
             ((DarkTabs)textTabs).Available = page => page == inputPage || (page == advicePage ? !String.IsNullOrWhiteSpace(state.Text) : result.TextLength > 0 || reformulated.TextLength > 0);
             result.TextChanged += (s,e) => textTabs.Invalidate(); reformulated.TextChanged += (s,e) => textTabs.Invalidate(); manualInput.TextChanged += (s,e) => textTabs.Invalidate();
             // Opening a tab never calls the AI: only the Reformuler button asks for a reformulation.
             textTabs.SelectedIndexChanged += (s,e) => {
+                if (textTabs.SelectedTab == advicePage) EnsureHeight(470);
                 UpdateProposalActions();
                 if (textTabs.SelectedTab == reformulationPage && reformulationVersion != state.Version && resultVersion == state.Version && !busy && !paused) status.Text = "Cliquez sur Reformuler pour proposer une autre tournure.";
             };
@@ -805,6 +831,7 @@ namespace CorrecteurMail {
             // Reformuler also corrects: it is available as soon as there is text, like Corriger.
             reformulate.Enabled = !busy && !paused && !String.IsNullOrWhiteSpace(state.Text);
             adviceAsk.Enabled = !busy && !paused && !String.IsNullOrWhiteSpace(state.Text);
+            foreach (var tone in toneButtons) tone.Enabled = adviceAsk.Enabled;
             adviceReformulate.Enabled = !busy && !paused && adviceVersion == state.Version && adviceBox.TextLength > 0;
         }
         private void SetOriginal(string text) {
@@ -945,7 +972,7 @@ namespace CorrecteurMail {
             if (!handled.TryGetValue(HandledKey(state.Key, state.Text), out correction)) return;
             long version = state.Version; requested = version;
             if (correction != null) {
-                result.Text = DisplayText(correction); correctionVersion = resultVersion = correctedVersion = version; resultKey = state.Key; resultSource = state.Text;
+                result.Text = DisplayText(correction); correctionVersion = resultVersion = correctedVersion = version; resultKey = state.Key; resultSource = state.Text; RefreshChanges();
                 resultKept = true; keptKey = state.Key;
                 textTabs.SelectedTab = resultPage; SetExpanded(true);
                 status.Text = "Texte déjà corrigé · correction précédente réaffichée, sans nouvelle demande.";
@@ -1001,6 +1028,29 @@ namespace CorrecteurMail {
             }
             return true;
         }
+        // Words changed since the original text, shown with a soft background in Corrigé (the text itself is untouched).
+        private void RefreshChanges() {
+            if (result.TextLength == 0 || String.IsNullOrEmpty(resultSource)) return;
+            // A RichTextBox counts line breaks as one character.
+            string original = DisplayText(resultSource).Replace("\r\n", "\n"), shown = result.Text.Replace("\r\n", "\n");
+            var handle = resultView.Handle;
+            if (resultView.Text != shown) resultView.Text = shown;
+            resultView.SelectAll(); resultView.SelectionBackColor = resultView.BackColor;
+            Color color = Palette.IsDark ? Color.FromArgb(52, 96, 70) : Color.FromArgb(214, 237, 207);
+            int delta = 0;
+            foreach (var edit in Differences(original, shown)) {
+                int length = edit.Item3.Length, start = edit.Item1 + delta; delta += length - (edit.Item2 - edit.Item1);
+                if (length == 0 || start + length > resultView.TextLength) continue;
+                resultView.Select(start, length); resultView.SelectionBackColor = color;
+            }
+            resultView.Select(0, 0);
+        }
+        private void EnsureHeight(int logicalHeight) {
+            int needed = (int)Math.Round(logicalHeight * CurrentAutoScaleDimensions.Height / 96f);
+            if (ClientSize.Height >= needed) return;
+            int bottom = Bottom; ClientSize = new Size(ClientSize.Width, needed);
+            var area = Screen.FromControl(this).WorkingArea; Top = Math.Max(area.Top, Math.Min(bottom, area.Bottom) - Height);
+        }
         private bool ReturnedToOutlook() {
             if (!outlookForeground()) { awayArmed = true; return false; }
             if (!awayArmed) return false;
@@ -1024,7 +1074,7 @@ namespace CorrecteurMail {
                 long version = state.Version; string key = state.Key, text = state.Text;
                 string previousProposal = resultVersion == version ? (SelectedProposal ?? (reformulationVersion == version ? reformulated : result)).Text : null;
                 TabPage previousPage = textTabs.SelectedTab;
-                requested = version; busy = true; apply.Enabled = reformulate.Enabled = retry.Enabled = copy.Enabled = adviceAsk.Enabled = adviceReformulate.Enabled = false;
+                requested = version; busy = true; apply.Enabled = reformulate.Enabled = retry.Enabled = copy.Enabled = adviceAsk.Enabled = adviceReformulate.Enabled = false; foreach (var tone in toneButtons) tone.Enabled = false;
                 requestStarted = DateTime.UtcNow; requestTitle = fluent ? "Reformulation" : "Correction stricte";
                 ShowDraftPreview(text);
                 status.Text = advice != null ? "Reformulation selon l’avis en cours…" : fluent ? "Reformulation en cours…" : "Correction stricte en cours…";
@@ -1043,6 +1093,7 @@ namespace CorrecteurMail {
                     else { result.Text = DisplayText(corrected); correctionVersion = version; resultKept = true; }
                     keptKey = key;
                     resultVersion = version; resultKey = key; resultSource = text;
+                    if (!fluent) RefreshChanges();
                     // A reformulation that alters numbers must not cancel a valid strict correction.
                     if (Integrity.SameNumbers(text, corrected)) correctedVersion = version;
                     else if (!fluent) correctedVersion = -1;
@@ -1082,7 +1133,7 @@ namespace CorrecteurMail {
                 if (state.Text.Length > 30000) { status.Text = "Brouillon trop long (30 000 caractères maximum)."; return; }
                 long version = state.Version; string text = state.Text;
                 string question = adviceQuestion.Text.Trim(); if (question.Length == 0) question = "Donne ton avis sur ce mail.";
-                busy = true; apply.Enabled = reformulate.Enabled = retry.Enabled = copy.Enabled = adviceAsk.Enabled = adviceReformulate.Enabled = false;
+                busy = true; apply.Enabled = reformulate.Enabled = retry.Enabled = copy.Enabled = adviceAsk.Enabled = adviceReformulate.Enabled = false; foreach (var tone in toneButtons) tone.Enabled = false;
                 requestStarted = DateTime.UtcNow; requestTitle = "Avis";
                 status.Text = "Avis en cours…";
                 try {

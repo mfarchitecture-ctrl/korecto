@@ -532,6 +532,20 @@ namespace CorrecteurMail {
                     dialog.Save.PerformClick(); return Value(initial && notYet && preference.ManualByDefault && dialog.DialogResult == DialogResult.OK);
                 }
             });
+            Check("Consignes : lignes vides et paragraphes à conserver, consigne de ton prévue", AppAssets.Read(AppDomain.CurrentDomain.BaseDirectory, "CONSIGNES.txt").Contains("ligne vide entre deux paragraphes") && AppAssets.Read(AppDomain.CurrentDomain.BaseDirectory, "CONSIGNES.txt").Contains("consigne de ton"));
+            await Test("Boutons de ton : reformulation selon la consigne choisie, sans avis préalable", async () => { using (var r = new Rig()) {
+                await r.Tick(); var tabs = r.Get<TabControl>("textTabs"); var handle = tabs.Handle; tabs.SelectedTab = r.Get<TabPage>("advicePage");
+                var tones = r.Get<List<Button>>("toneButtons"); bool ready = tones.Count == 4 && tones[0].Enabled && r.Runner.Calls == 0;
+                r.Runner.Next(); tones[0].PerformClick(); r.Runner.Pending.SetResult("Bonjour, voici les documents. Merci de confirmer."); await Task.Delay(100);
+                return ready && r.Runner.Fluent && r.Runner.LastAdvice != null && r.Runner.LastAdvice.Contains("ferme") && r.Get<TextBox>("reformulated").Text.StartsWith("Bonjour, voici") && r.Range.Text == null;
+            } });
+            await Test("Corrigé : mots modifiés surlignés, texte copié non altéré", async () => { using (var r = new Rig()) {
+                await r.Ready(); var view = r.Get<RichTextBox>("resultView"); var handle = view.Handle;
+                Func<string, Color> back = word => { int index = view.Text.IndexOf(word); view.Select(index, word.Length); return view.SelectionBackColor; };
+                bool highlighted = back("documents") != back("Bonjour") && back("prêts") != back("Bonjour") && back("sont") == back("Bonjour");
+                string copied = null; r.Get<TabControl>("textTabs").SelectedTab = r.Get<TabPage>("resultPage"); r.Call("CopyResult", new Action<string>(value => copied = value));
+                return highlighted && copied == r.Get<TextBox>("result").Text && copied.StartsWith("Bonjour, les documents sont prêts.");
+            } });
             await Test("Reformuler utilise le mode explicite", async () => { using (var r = new Rig()) { var t = (Task)r.Call("Request", true); r.Runner.Pending.SetResult("Bonjour."); await t; return r.Runner.Fluent && r.Valid; } });
             await Test("Onglet Reformulé : aucune demande, seul le bouton Reformuler reformule", async () => { using (var r = new Rig()) {
                 await r.Ready(); r.Runner.Next();
