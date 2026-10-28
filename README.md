@@ -31,6 +31,7 @@ Aucune clé API n'est demandée : Korecto utilise votre abonnement via le client
 - **Mode Manuel** : bouton Manuel, collez votre texte, Corriger, Copier.
 - **Avis** : le 4ᵉ onglet répond à une question sur votre mail (« trop gentil ? trop agressif ? ») de façon directe et sincère. « Reformuler selon cet avis » propose ensuite une version qui va dans ce sens. Rien n'est envoyé à l'IA avant votre clic.
 - **Alt + K** : sélectionnez un texte dans n'importe quelle application (Gmail dans le navigateur, Word…), appuyez sur Alt + K : il arrive dans Korecto en mode Manuel, sans appel à l'IA.
+- **Mode par défaut** (dans ⚙) : Outlook ou Manuel. Si vous passez en Manuel (bouton ou Alt + K), Korecto revient seul à Outlook quand vous retournez dans Outlook avec un brouillon ouvert. Si le défaut est Manuel, il y revient dès que vous quittez Outlook ou fermez le brouillon.
 - La croix de la fenêtre la range près de l'horloge ; **Quitter** se trouve dans le menu de cette icône. Le thème clair ou sombre et le démarrage avec Windows se règlent dans ⚙.
 
 ## Garde-fous

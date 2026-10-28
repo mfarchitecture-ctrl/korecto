@@ -84,8 +84,8 @@ namespace CorrecteurMail {
             set { Window.ClientSize = new Size((int)Math.Round(value.Width * DpiScale), (int)Math.Round(value.Height * DpiScale)); }
         }
         // liveRange: text written by Appliquer is read back, like Outlook; Range.Text = null stands for Ctrl+Z.
-        internal Rig(bool liveRange = false) {
-            Window = new Popup(true, Runner, () => { Reads++; return Exists ? new Draft { Key = Key, Text = liveRange && Range.Text != null ? Range.Text : Text, Range = Range } : null; },() => Foreground, appearancePath: Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "TEMP", "THEME", "rig.theme.txt"), popupReader: () => Menu);
+        internal Rig(bool liveRange = false, ModePreference mode = null) {
+            Window = new Popup(true, Runner, () => { Reads++; return Exists ? new Draft { Key = Key, Text = liveRange && Range.Text != null ? Range.Text : Text, Range = Range } : null; },() => Foreground, appearancePath: Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "TEMP", "THEME", "rig.theme.txt"), popupReader: () => Menu, modePreference: mode);
             Window.Opacity = 0; Window.ShowInTaskbar = false; Window.Show();
         }
         internal T Get<T>(string name) { return (T)typeof(Popup).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic).GetValue(Window); }
@@ -497,6 +497,35 @@ namespace CorrecteurMail {
                 string advice = await engine.Advise("FAKE_PAYLOAD", "Trop gentil ?"); string follow = await engine.Correct("FAKE_PAYLOAD", true, "Plus ferme"); string strict = await engine.Correct("FAKE_PAYLOAD", false);
                 return advice.Contains("\"mode\":\"AVIS\"") && advice.Contains("\"question\":\"Trop gentil ?\"") && follow.Contains("\"mode\":\"REFORMULER\"") && follow.Contains("\"avis\":\"Plus ferme\"") && strict.Contains("\"mode\":\"STRICT\"") && !strict.Contains("\"avis\"");
             } });
+            await Test("Mode par défaut Outlook : après Manuel, retour automatique en revenant dans Outlook avec un brouillon", async () => { using (var r = new Rig()) {
+                r.Call("SwitchMode"); await r.Tick(); bool stays = r.Get<bool>("manualMode"); // Outlook has been in front since the switch (Alt + K from the draft): no immediate return
+                r.Foreground = false; await r.Tick(); bool away = r.Get<bool>("manualMode");
+                r.Foreground = true; await r.Tick();
+                return stays && away && !r.Get<bool>("manualMode");
+            } });
+            await Test("Mode par défaut Manuel : démarrage en Manuel, retour en Manuel quand le brouillon Outlook est quitté ou fermé", async () => {
+                string folder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TEMP", "MODE_MANUEL"); if (Directory.Exists(folder)) DeleteFixtureDirectory(folder);
+                var preference = new ModePreference(folder); preference.Save(true);
+                bool closed, left;
+                using (var r = new Rig(false, preference)) {
+                    bool started = r.Get<bool>("manualMode");
+                    r.Call("SwitchMode"); await r.Tick(); bool outlook = !r.Get<bool>("manualMode") && r.Get<bool>("detected");
+                    r.Exists = false; await r.Tick(); closed = started && outlook && r.Get<bool>("manualMode") && r.Window.Visible;
+                }
+                using (var r = new Rig(false, preference)) {
+                    r.Call("SwitchMode"); await r.Tick(); r.Foreground = false; await r.Tick(); left = r.Get<bool>("manualMode");
+                }
+                return closed && left;
+            });
+            await Test("Paramètres : mode Manuel par défaut enregistré seulement avec Enregistrer", () => {
+                string folder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TEMP", "MODE_REGLAGE"); if (Directory.Exists(folder)) DeleteFixtureDirectory(folder);
+                var preference = new ModePreference(folder);
+                using (var dialog = new SettingsDialog(() => AiSettings.Default(), (owner, current) => null, new StartupPreference(new FakeStartupStore()), modePreference: preference)) {
+                    dialog.Opacity = 0; dialog.ShowInTaskbar = false; dialog.Show();
+                    bool initial = !dialog.DefaultManual.Checked; dialog.DefaultManual.Checked = true; bool notYet = !preference.ManualByDefault;
+                    dialog.Save.PerformClick(); return Value(initial && notYet && preference.ManualByDefault && dialog.DialogResult == DialogResult.OK);
+                }
+            });
             await Test("Reformuler utilise le mode explicite", async () => { using (var r = new Rig()) { var t = (Task)r.Call("Request", true); r.Runner.Pending.SetResult("Bonjour."); await t; return r.Runner.Fluent && r.Valid; } });
             await Test("Onglet Reformulé : aucune demande, seul le bouton Reformuler reformule", async () => { using (var r = new Rig()) {
                 await r.Ready(); r.Runner.Next();

@@ -495,6 +495,8 @@ namespace CorrecteurMail {
         private readonly Button apply = new SoftButton(), reformulate = new SoftButton(), retry = new SoftButton { Primary = true }, pause = new SoftButton();
         private readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer(), updateTimer = new System.Windows.Forms.Timer();
         private ReleaseInfo availableUpdate;
+        private readonly ModePreference modePref;
+        private bool defaultManual, awayArmed;
         private SelectionAccess selectionAccess;
         private readonly bool internalMode;
         private readonly Debounce state = new Debounce();
@@ -556,10 +558,11 @@ namespace CorrecteurMail {
             if (value && suppressInitialVisibility) { suppressInitialVisibility = false; if (!IsHandleCreated) CreateHandle(); base.SetVisibleCore(false); return; }
             base.SetVisibleCore(value);
         }
-        internal Popup(bool testMode = false, ICorrectionRunner correctionRunner = null, Func<Draft> draftReader = null, Func<bool> foregroundReader = null, AiSettings aiSettings = null, string appearancePath = null, bool startInTray = false, bool internalMode = false, Func<bool> popupReader = null) {
+        internal Popup(bool testMode = false, ICorrectionRunner correctionRunner = null, Func<Draft> draftReader = null, Func<bool> foregroundReader = null, AiSettings aiSettings = null, string appearancePath = null, bool startInTray = false, bool internalMode = false, Func<bool> popupReader = null, ModePreference modePreference = null) {
             SuspendLayout();
             this.testMode = testMode;
             this.internalMode = internalMode;
+            modePref = modePreference ?? new ModePreference(); defaultManual = modePref.ManualByDefault;
             suppressInitialVisibility = startInTray;
             settings = (aiSettings ?? AiSettings.Default()).Copy();
             runner = correctionRunner ?? new AccountRunner(aiSettings: settings);
@@ -694,6 +697,7 @@ namespace CorrecteurMail {
             AutoScaleDimensions = new SizeF(96, 96); ResumeLayout(true);
             Location = new Point(area.Right - Width - 20, area.Bottom - Height - 20);
             if (!testMode) selectionAccess = new SelectionAccess(ImportSelection, message => { if (!closing) status.Text = message; });
+            if (defaultManual) SwitchMode();
             if (internalMode) {
                 SetAvailableUpdate(new ReleaseInfo { Version = new Version(99, 0, 0) });
                 Shown += (s,e) => { if (!manualMode) ImportSelection("Bonjour,\r\n\r\nCe texte fictif permet de découvrir la version interne de Korecto.\r\n\r\nVous pouvez aussi sélectionner un texte dans une autre application, puis appuyer sur Alt + K."); };
@@ -739,9 +743,9 @@ namespace CorrecteurMail {
             if (closing || settingsOpen) return;
             settingsOpen = true;
             try {
-                using (var dialog = new SettingsDialog(() => settings, ChooseAi, startupPreference: internalMode ? new StartupPreference(new InternalStartupStore()) : null, applyAi: SaveAi, checkUpdates: testMode || internalMode ? (Func<Form, Task>)null : owner => UpdateUi.Interactive(owner, ExitApplication))) dialog.ShowDialog(this);
+                using (var dialog = new SettingsDialog(() => settings, ChooseAi, modePreference: modePref, startupPreference: internalMode ? new StartupPreference(new InternalStartupStore()) : null, applyAi: SaveAi, checkUpdates: testMode || internalMode ? (Func<Form, Task>)null : owner => UpdateUi.Interactive(owner, ExitApplication))) dialog.ShowDialog(this);
             } finally {
-                settingsOpen = false; state.Changed = DateTime.UtcNow;
+                settingsOpen = false; state.Changed = DateTime.UtcNow; defaultManual = modePref.ManualByDefault;
                 retry.Enabled = CanCorrect;
                 if (manualMode) apply.Enabled = !busy && !paused;
             }
@@ -808,7 +812,7 @@ namespace CorrecteurMail {
         }
         private void SwitchMode() {
             if (busy) runner.Stop();
-            manualMode = !manualMode;
+            manualMode = !manualMode; awayArmed = false;
             context.Text = manualMode ? "MODE MANUEL" : "OUTLOOK";
             manualInput.ReadOnly = !manualMode;
             SetOriginal(manualMode ? manualDraft : "");
@@ -949,6 +953,8 @@ namespace CorrecteurMail {
         private Task Tick() { RefreshPreview(); return Task.FromResult(true); }
         private bool RefreshPreview() {
             if (closing || paused || settingsOpen) return false;
+            // Manuel is a detour from the default Outlook mode: back once Outlook was left and a draft is in front again.
+            if (manualMode && !defaultManual && !busy && ReturnedToOutlook()) SwitchMode();
             if (hiddenByUser && manualMode) return false;
             if (manualMode) {
                 retry.Enabled = CanCorrect; UpdateProposalActions();
@@ -956,7 +962,11 @@ namespace CorrecteurMail {
                 return false;
             }
             bool foreground = outlookForeground();
-            if (!foreground && (!Visible || !ContainsFocus)) { if (detected) Hide(); return false; }
+            if (!foreground && (!Visible || !ContainsFocus)) {
+                // Default Manuel: the Outlook mode lasts only while an Outlook draft is in front.
+                if (defaultManual) SwitchMode(); else if (detected) Hide();
+                return false;
+            }
             using (var draft = readDraft()) {
                 // A ribbon menu or dialog hides the draft from Outlook for a moment: keep Korecto as it is.
                 if (draft == null && foreground && outlookPopup()) return false;
@@ -971,6 +981,7 @@ namespace CorrecteurMail {
                     status.Text = "Ouvrez un brouillon Outlook ou passez en Manuel.";
                     // Draft left, closed or sent: Korecto withdraws to the notification area and
                     // returns with the next draft (Manuel stays in the notification menu).
+                    if (left && defaultManual) { SwitchMode(); return false; }
                     if (left && Visible) Hide();
                     return false;
                 }
@@ -986,6 +997,11 @@ namespace CorrecteurMail {
                 }
             }
             return true;
+        }
+        private bool ReturnedToOutlook() {
+            if (!outlookForeground()) { awayArmed = true; return false; }
+            if (!awayArmed) return false;
+            using (var draft = readDraft()) return draft != null;
         }
         private void TogglePause() {
             paused = !paused; pause.Text = paused ? "▶" : "Ⅱ"; pause.AccessibleName = paused ? "Reprendre" : "Mettre en pause"; tips.SetToolTip(pause, pause.AccessibleName);
