@@ -899,7 +899,7 @@ namespace CorrecteurMail {
         private static void TestUpdates(string directory) {
             string root = Path.Combine(directory, "MAJ"); if (Directory.Exists(root)) Directory.Delete(root, true); Directory.CreateDirectory(root);
             string good = "https://github.com/mfarchitecture-ctrl/korecto/releases/download/v9.0.0/Korecto.exe";
-            Check("Version : l'exe porte son numéro 1.0.2", AppBrand.Version == "1.0.2" && System.Diagnostics.FileVersionInfo.GetVersionInfo(Assembly.GetExecutingAssembly().Location).FileVersion == "1.0.2.0");
+            Check("Version : l'exe porte son numéro 1.0.3", AppBrand.Version == "1.0.3" && System.Diagnostics.FileVersionInfo.GetVersionInfo(Assembly.GetExecutingAssembly().Location).FileVersion == "1.0.3.0");
             Check("Version : étiquette v1.0.2 plus récente que 1.0.1, 1.0.1 et 1.0.0 non", Updater.IsNewer("1.0.1", Updater.ParseVersion("v1.0.2")) && !Updater.IsNewer("1.0.1", Updater.ParseVersion("v1.0.1")) && !Updater.IsNewer("1.0.1", Updater.ParseVersion("1.0.0")) && Updater.IsNewer("1.0.1", Updater.ParseVersion("v1.1")) && Updater.IsNewer("1.0.9", Updater.ParseVersion("1.10.0")));
             Check("Version : étiquettes invalides ignorées", Updater.ParseVersion("beta") == null && Updater.ParseVersion("") == null && Updater.ParseVersion(null) == null && !Updater.IsNewer("1.0.1", null) && !Updater.IsNewer("???", new Version(9, 0, 0)));
             var release = Updater.ParseRelease(ReleaseJson("v9.0.0", good, 2048, "sha256:ABCDEF"));

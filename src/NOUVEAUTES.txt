@@ -1,3 +1,11 @@
+Version 1.0.3
+- Nouvel onglet Avis : posez une question sur votre mail (« trop gentil ? trop agressif ? »), l'IA répond franchement, puis « Reformuler selon cet avis ».
+- Appliquer conserve les liens et les mentions @ tels quels et corrige le reste du texte.
+- Reformuler est disponible tout de suite, sans corriger d'abord.
+- Mode par défaut au choix (Outlook ou Manuel) dans ⚙, avec retour automatique après un détour.
+- Korecto reste affiché quand un menu ou une boîte de dialogue d'Outlook s'ouvre.
+- Icône : K mieux centré.
+
 Version 1.0.2
 - Mise à jour signalée par un petit bouton « Mise à jour disponible » en haut de la fenêtre, au lieu d'une notification.
 - Onglets Corrigé et Reformulé accessibles seulement après une première correction ou reformulation.
