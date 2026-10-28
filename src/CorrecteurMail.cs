@@ -26,7 +26,6 @@ namespace CorrecteurMail {
     }
     internal static class Native {
         [DllImport("user32.dll")] internal static extern IntPtr GetForegroundWindow();
-        [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wparam, string lparam);
         [DllImport("user32.dll")] internal static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
         private static readonly OutlookProcessCache foregroundProcess = new OutlookProcessCache();
         internal static bool OutlookForeground() {
@@ -387,6 +386,16 @@ namespace CorrecteurMail {
             control.Invalidate(true);
         }
     }
+    // A text box that shows a muted hint while it is empty (the native hint does not exist for multiline boxes).
+    internal sealed class HintTextBox : TextBox {
+        internal string Hint = "";
+        protected override void WndProc(ref Message m) {
+            base.WndProc(ref m);
+            if (m.Msg != 0x000F || TextLength > 0 || Hint.Length == 0) return;
+            using (var graphics = Graphics.FromHwnd(Handle))
+                TextRenderer.DrawText(graphics, Hint, Font, new Rectangle(1, 1, Math.Max(0, ClientSize.Width - 2), Math.Max(0, ClientSize.Height - 2)), Palette.Muted, TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
+        }
+    }
     internal sealed class SoftButton : Button {
         internal bool Primary;
         private bool hover;
@@ -487,7 +496,8 @@ namespace CorrecteurMail {
         private readonly Button updateAvailable = new SoftButton();
         private readonly TableLayoutPanel noticeRow = new TableLayoutPanel();
         private readonly Button theme;
-        private readonly TextBox result = new TextBox(), reformulated = new TextBox(), adviceQuestion = new TextBox(), adviceBox = new TextBox();
+        private readonly TextBox result = new TextBox(), reformulated = new TextBox();
+        private readonly HintTextBox adviceQuestion = new HintTextBox(), adviceBox = new HintTextBox();
         private readonly Button adviceAsk = new SoftButton(), adviceReformulate = new SoftButton();
         private readonly List<Button> toneButtons = new List<Button>();
         private readonly RichTextBox resultView = new RichTextBox();
@@ -632,8 +642,9 @@ namespace CorrecteurMail {
             result.TextChanged += (s,e) => resultView.Text = result.Text;
             inputPage.Controls.Add(manualInput); resultPage.Controls.Add(resultView); resultPage.Controls.Add(result); reformulationPage.Controls.Add(reformulated);
             // Avis: a question about the draft, the answer, then a reformulation that follows it or a tone shortcut. Nothing leaves before a click.
-            // Empty field with a grey hint (shown even when focused); an empty question asks for a general opinion.
-            adviceQuestion.HandleCreated += (s,e) => Native.SendMessage(adviceQuestion.Handle, 0x1501, (IntPtr)1, "Votre question (vide = avis général)");
+            // Empty field with a muted hint; an empty question asks for a general opinion.
+            adviceQuestion.Hint = "Votre question (vide = avis général)";
+            adviceBox.Hint = "Posez une question sur votre mail : « trop agressif ? », « assez clair ? », « le bon ton pour un client ? »… L’IA répond franchement, puis vous pouvez reformuler dans le sens de son avis.";
             adviceQuestion.MaxLength = 300; adviceQuestion.Font = new Font("Segoe UI", 10); adviceQuestion.BorderStyle = BorderStyle.FixedSingle;
             adviceQuestion.Dock = DockStyle.Fill; adviceQuestion.Margin = new Padding(0, 4, 8, 0);
             adviceQuestion.KeyDown += (s,e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; adviceAsk.PerformClick(); } };

@@ -479,7 +479,7 @@ namespace CorrecteurMail {
                 }
             });
             await Test("Avis : champ de question vide au départ, avis général demandé si on ne tape rien", async () => { using (var r = new Rig()) {
-                await r.Tick(); bool empty = r.Get<TextBox>("adviceQuestion").Text.Length == 0;
+                await r.Tick(); bool empty = r.Get<TextBox>("adviceQuestion").Text.Length == 0 && r.Get<HintTextBox>("adviceQuestion").Hint.Contains("question") && r.Get<HintTextBox>("adviceBox").Hint.Contains("Posez une question");
                 var task = (Task)r.Call("RequestAdvice"); r.Runner.Pending.SetResult("Plutôt clair."); await task;
                 return empty && r.Runner.LastQuestion == "Donne ton avis sur ce mail.";
             } });
