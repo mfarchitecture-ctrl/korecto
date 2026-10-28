@@ -626,9 +626,9 @@ namespace CorrecteurMail {
             header.Controls.Add(status, 0, 0); header.Controls.Add(manual, 1, 0);
             result.Dock = DockStyle.Fill; result.Multiline = true; result.ReadOnly = true; result.ScrollBars = ScrollBars.Vertical; result.BackColor = Palette.Surface; result.ForeColor = Palette.Text; result.BorderStyle = BorderStyle.None; result.MaxLength = 0;
             result.ShortcutsEnabled = true;
-            reformulated.Dock = DockStyle.Fill; reformulated.Multiline = true; reformulated.ReadOnly = true; reformulated.ScrollBars = ScrollBars.Vertical; reformulated.BorderStyle = BorderStyle.None; reformulated.MaxLength = 0;
+            reformulated.Dock = DockStyle.Fill; reformulated.Multiline = true; reformulated.ReadOnly = true; reformulated.ScrollBars = ScrollBars.None; reformulated.BorderStyle = BorderStyle.None; reformulated.MaxLength = 0;
             result.Font = manualInput.Font = reformulated.Font = new Font("Segoe UI", 11);
-            manualInput.Dock = DockStyle.Fill; manualInput.Multiline = true; manualInput.ScrollBars = ScrollBars.Vertical; manualInput.AcceptsReturn = true; manualInput.MaxLength = 0;
+            manualInput.Dock = DockStyle.Fill; manualInput.Multiline = true; manualInput.ScrollBars = ScrollBars.None; manualInput.AcceptsReturn = true; manualInput.MaxLength = 0;
             manualInput.BackColor = Palette.Surface; manualInput.ForeColor = Palette.Text; manualInput.BorderStyle = BorderStyle.None;
             manualInput.ReadOnly = true;
             foreach (var page in new [] { inputPage, resultPage, reformulationPage, advicePage }) { page.BackColor = Palette.Surface; page.ForeColor = Palette.Text; page.Padding = new Padding(12); }
@@ -644,6 +644,7 @@ namespace CorrecteurMail {
             };
             // Corrigé shows the proposal with the changed words highlighted; the hidden text box stays the text that is copied and applied.
             result.Visible = false;
+            foreach (var text in new [] { manualInput, reformulated, adviceBox }) { var box = text; box.TextChanged += (s,e) => FitScrollbar(box); box.SizeChanged += (s,e) => FitScrollbar(box); }
             foreach (var box in new Control[] { manualInput, reformulated, resultView, adviceBox }) { var scrolling = box; scrolling.HandleCreated += (s,e) => Palette.ThemeScrollbars(scrolling); }
             resultView.Dock = DockStyle.Fill; resultView.ReadOnly = true; resultView.ScrollBars = RichTextBoxScrollBars.Vertical; resultView.BorderStyle = BorderStyle.None; resultView.DetectUrls = false; resultView.Font = new Font("Segoe UI", 11);
             resultView.BackColorChanged += (s,e) => RefreshChanges();
@@ -660,7 +661,7 @@ namespace CorrecteurMail {
             adviceAsk.Text = "Demander l’avis"; adviceAsk.Dock = DockStyle.Fill; adviceAsk.Margin = Padding.Empty; adviceAsk.Enabled = false;
             adviceAsk.Click += async (s,e) => await RequestAdvice();
             tips.SetToolTip(adviceAsk, "Envoie le brouillon et votre question à l’IA. Rien n’est modifié dans le mail.");
-            adviceBox.Dock = DockStyle.Fill; adviceBox.Multiline = true; adviceBox.ReadOnly = true; adviceBox.ScrollBars = ScrollBars.Vertical; adviceBox.BorderStyle = BorderStyle.None; adviceBox.MaxLength = 0; adviceBox.Font = new Font("Segoe UI", 11); adviceBox.Margin = new Padding(0, 8, 0, 8);
+            adviceBox.Dock = DockStyle.Fill; adviceBox.Multiline = true; adviceBox.ReadOnly = true; adviceBox.ScrollBars = ScrollBars.None; adviceBox.BorderStyle = BorderStyle.None; adviceBox.MaxLength = 0; adviceBox.Font = new Font("Segoe UI", 11); adviceBox.Margin = new Padding(0, 8, 0, 8);
             adviceReformulate.Text = "Reformuler selon cet avis"; adviceReformulate.Dock = DockStyle.Fill; adviceReformulate.Margin = Padding.Empty; adviceReformulate.Enabled = false;
             adviceReformulate.Click += async (s,e) => await RequestCore(true, adviceBox.Text);
             var tones = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, Margin = new Padding(0, 6, 0, 0), Tag = "surface" };
@@ -1067,6 +1068,16 @@ namespace CorrecteurMail {
                 resultView.Select(start, length); resultView.SelectionBackColor = color;
             }
             resultView.Select(0, 0);
+        }
+        // A vertical scrollbar only when the text does not fit.
+        private static void FitScrollbar(TextBox box) {
+            if (box.TextLength == 0 && box.ScrollBars == ScrollBars.None) return;
+            int lines = box.GetLineFromCharIndex(box.TextLength) + 1;
+            var wanted = lines * box.Font.Height > box.ClientSize.Height ? ScrollBars.Vertical : ScrollBars.None;
+            if (wanted == box.ScrollBars) return;
+            int start = box.SelectionStart, length = box.SelectionLength;
+            box.ScrollBars = wanted; box.Select(start, length);
+            if (box.Focused) box.ScrollToCaret();
         }
         private void EnsureHeight(int logicalHeight) {
             int needed = (int)Math.Round(logicalHeight * CurrentAutoScaleDimensions.Height / 96f);
