@@ -13,5 +13,6 @@ Ne pas la répéter à chaque message. La donner seulement quand Maxime la deman
 2. Appliquer garde les liens et mentions @ tels quels et corrige le reste mot par mot — `81b5ccd`
 3. Reformuler disponible dès qu'il y a du texte, sans corriger d'abord — `1ac21e1`
 4. Icône : K recentré visuellement (décalé de 3,5/128 vers la droite) — `e6437e1`
+5. Onglet « Avis » : question sur le mail, réponse franche de l'IA, « Reformuler selon cet avis » — `5fc7512`
 
 Aucune n'a été essayée dans un vrai Outlook. Vider cette liste à chaque release.
