@@ -155,7 +155,8 @@ namespace CorrecteurMail {
     }
     internal interface ICorrectionRunner : IDisposable {
         string Progress { get; }
-        Task<string> Correct(string text, bool fluent);
+        Task<string> Correct(string text, bool fluent, string advice = null);
+        Task<string> Advise(string text, string question);
         void Stop();
     }
     internal sealed class AccountRunner : ICorrectionRunner {
@@ -236,7 +237,9 @@ namespace CorrecteurMail {
             if (detail.Contains("model_not_found") || detail.Contains("model is not supported") || detail.Contains("model not available") || detail.Contains("does not have access to model")) return "Modèle " + settings.ModelName + " indisponible pour ce compte. Choisissez un autre modèle dans les paramètres d’IA.";
             return previous;
         }
-        public Task<string> Correct(string text, bool fluent) {
+        public Task<string> Correct(string text, bool fluent, string advice = null) { return Ask(fluent ? "REFORMULER" : "STRICT", text, null, advice); }
+        public Task<string> Advise(string text, string question) { return Ask("AVIS", text, question, null); }
+        private Task<string> Ask(string mode, string text, string question, string advice) {
             int ticket;
             lock (gate) { if (disposed) throw new ObjectDisposedException("AccountRunner"); ticket = cancellation; Progress = "Connexion à " + settings.ProviderName + "…"; }
             return Task.Run(() => {
@@ -253,7 +256,10 @@ namespace CorrecteurMail {
                 }
                 var json = new JavaScriptSerializer();
                 string rules = AppAssets.Read(root, "CONSIGNES.txt");
-                string payload = rules + "\n\nDonnées utilisateur :\n" + json.Serialize(new { mode = fluent ? "REFORMULER" : "STRICT", brouillon = text });
+                var data = new Dictionary<string, object> { { "mode", mode }, { "brouillon", text } };
+                if (question != null) data["question"] = question;
+                if (advice != null) data["avis"] = advice;
+                string payload = rules + "\n\nDonnées utilisateur :\n" + json.Serialize(data);
                 // No body on command line, no API key, no persisted chat, no user MCP servers.
                 var info = command.StartInfo(ArgumentsFor(settings, root), root);
                 var p = new Process { StartInfo = info };
@@ -455,7 +461,7 @@ namespace CorrecteurMail {
         }
         protected override void OnHandleCreated(EventArgs e) {
             base.OnHandleCreated(e);
-            using (var graphics = CreateGraphics()) ItemSize = new Size((int)(132 * graphics.DpiX / 96), (int)(34 * graphics.DpiY / 96));
+            using (var graphics = CreateGraphics()) ItemSize = new Size((int)(112 * graphics.DpiX / 96), (int)(34 * graphics.DpiY / 96));
         }
         protected override void OnPaint(PaintEventArgs e) {
             e.Graphics.Clear(Palette.Background);
@@ -477,10 +483,11 @@ namespace CorrecteurMail {
         private readonly Button updateAvailable = new SoftButton();
         private readonly TableLayoutPanel noticeRow = new TableLayoutPanel();
         private readonly Button theme;
-        private readonly TextBox result = new TextBox(), reformulated = new TextBox();
+        private readonly TextBox result = new TextBox(), reformulated = new TextBox(), adviceQuestion = new TextBox(), adviceBox = new TextBox();
+        private readonly Button adviceAsk = new SoftButton(), adviceReformulate = new SoftButton();
         private readonly TextBox manualInput = new TextBox();
         private readonly TabControl textTabs = new DarkTabs();
-        private readonly TabPage inputPage = new TabPage("Texte d’origine"), resultPage = new TabPage("Corrigé"), reformulationPage = new TabPage("Reformulé");
+        private readonly TabPage inputPage = new TabPage("Texte d’origine"), resultPage = new TabPage("Corrigé"), reformulationPage = new TabPage("Reformulé"), advicePage = new TabPage("Avis");
         private readonly Button manual = new SoftButton(), copy = new SoftButton();
         private readonly Button expand = new SoftButton();
         private readonly TableLayoutPanel layout = new TableLayoutPanel();
@@ -506,7 +513,7 @@ namespace CorrecteurMail {
         private bool suppressInitialVisibility;
         private bool paused, busy, closing, detected, expanded, manualMode, settingsOpen;
         private long requested = -1, resultVersion = -1, correctedVersion = -1;
-        private long correctionVersion = -1, reformulationVersion = -1;
+        private long correctionVersion = -1, reformulationVersion = -1, adviceVersion = -1;
         private string manualDraft = "";
         private bool updatingInput;
         private Size expandedClientSize = new Size(520, 350);
@@ -598,7 +605,7 @@ namespace CorrecteurMail {
             manualInput.Dock = DockStyle.Fill; manualInput.Multiline = true; manualInput.ScrollBars = ScrollBars.Vertical; manualInput.AcceptsReturn = true; manualInput.MaxLength = 0;
             manualInput.BackColor = Palette.Surface; manualInput.ForeColor = Palette.Text; manualInput.BorderStyle = BorderStyle.None;
             manualInput.ReadOnly = true;
-            foreach (var page in new [] { inputPage, resultPage, reformulationPage }) { page.BackColor = Palette.Surface; page.ForeColor = Palette.Text; page.Padding = new Padding(12); }
+            foreach (var page in new [] { inputPage, resultPage, reformulationPage, advicePage }) { page.BackColor = Palette.Surface; page.ForeColor = Palette.Text; page.Padding = new Padding(12); }
             manualInput.TextChanged += (s,e) => {
                 if (!manualMode || updatingInput) return;
                 manualDraft = manualInput.Text;
@@ -610,10 +617,22 @@ namespace CorrecteurMail {
                 status.Text = "Texte manuel · cliquez sur Corriger.";
             };
             inputPage.Controls.Add(manualInput); resultPage.Controls.Add(result); reformulationPage.Controls.Add(reformulated);
-            textTabs.Dock = DockStyle.Fill; textTabs.TabPages.AddRange(new [] { inputPage, resultPage, reformulationPage }); textTabs.Visible = false;
-            // Corrigé and Reformulé open only once a first proposal exists.
-            ((DarkTabs)textTabs).Available = page => page == inputPage || result.TextLength > 0 || reformulated.TextLength > 0;
-            result.TextChanged += (s,e) => textTabs.Invalidate(); reformulated.TextChanged += (s,e) => textTabs.Invalidate();
+            // Avis: a question about the draft, the answer, then a reformulation that follows it. Nothing leaves before a click.
+            adviceQuestion.Text = "Donne ton avis sur ce mail."; adviceQuestion.MaxLength = 300; adviceQuestion.Font = new Font("Segoe UI", 10); adviceQuestion.BorderStyle = BorderStyle.FixedSingle;
+            adviceQuestion.Dock = DockStyle.Top; adviceQuestion.Margin = new Padding(0, 0, 0, 6);
+            adviceQuestion.KeyDown += (s,e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; adviceAsk.PerformClick(); } };
+            adviceAsk.Text = "Demander l’avis"; adviceAsk.Dock = DockStyle.Top; adviceAsk.Height = 38; adviceAsk.Margin = new Padding(0, 0, 0, 6); adviceAsk.Enabled = false;
+            adviceAsk.Click += async (s,e) => await RequestAdvice();
+            tips.SetToolTip(adviceAsk, "Envoie le brouillon et votre question à l’IA. Rien n’est modifié dans le mail.");
+            adviceBox.Dock = DockStyle.Fill; adviceBox.Multiline = true; adviceBox.ReadOnly = true; adviceBox.ScrollBars = ScrollBars.Vertical; adviceBox.BorderStyle = BorderStyle.None; adviceBox.MaxLength = 0; adviceBox.Font = new Font("Segoe UI", 11);
+            adviceReformulate.Text = "Reformuler selon cet avis"; adviceReformulate.Dock = DockStyle.Bottom; adviceReformulate.Height = 40; adviceReformulate.Margin = new Padding(0, 6, 0, 0); adviceReformulate.Enabled = false;
+            adviceReformulate.Click += async (s,e) => await RequestCore(true, adviceBox.Text);
+            // Docking: the control added first fills what the others leave.
+            advicePage.Controls.Add(adviceBox); advicePage.Controls.Add(adviceReformulate); advicePage.Controls.Add(adviceAsk); advicePage.Controls.Add(adviceQuestion);
+            textTabs.Dock = DockStyle.Fill; textTabs.TabPages.AddRange(new [] { inputPage, resultPage, reformulationPage, advicePage }); textTabs.Visible = false;
+            // Corrigé and Reformulé open only once a first proposal exists; Avis as soon as there is a text.
+            ((DarkTabs)textTabs).Available = page => page == inputPage || (page == advicePage ? !String.IsNullOrWhiteSpace(state.Text) : result.TextLength > 0 || reformulated.TextLength > 0);
+            result.TextChanged += (s,e) => textTabs.Invalidate(); reformulated.TextChanged += (s,e) => textTabs.Invalidate(); manualInput.TextChanged += (s,e) => textTabs.Invalidate();
             // Opening a tab never calls the AI: only the Reformuler button asks for a reformulation.
             textTabs.SelectedIndexChanged += (s,e) => {
                 UpdateProposalActions();
@@ -743,7 +762,7 @@ namespace CorrecteurMail {
             }
             SwitchMode(); manualInput.Text = "Texte collé, à corriger.";
             ShowDraftPreview(manualInput.Text);
-            return manualInput.Text == "Texte collé, à corriger." && result.TextLength == 0 && resultVersion < 0 && !copy.Enabled && textTabs.TabPages.Count == 3;
+            return manualInput.Text == "Texte collé, à corriger." && result.TextLength == 0 && resultVersion < 0 && !copy.Enabled && textTabs.TabPages.Count == 4;
         }
         internal async Task<bool> TestManualCorrectionDisplay() {
             SwitchMode();
@@ -778,6 +797,8 @@ namespace CorrecteurMail {
             apply.Enabled = manualMode ? !busy && !paused : valid && Integrity.SameNumbers(resultSource ?? "", proposal.Text);
             // Reformuler also corrects: it is available as soon as there is text, like Corriger.
             reformulate.Enabled = !busy && !paused && !String.IsNullOrWhiteSpace(state.Text);
+            adviceAsk.Enabled = !busy && !paused && !String.IsNullOrWhiteSpace(state.Text);
+            adviceReformulate.Enabled = !busy && !paused && adviceVersion == state.Version && adviceBox.TextLength > 0;
         }
         private void SetOriginal(string text) {
             string displayed = DisplayText(text);
@@ -876,8 +897,8 @@ namespace CorrecteurMail {
         // (still copyable); only Appliquer needs a new correction of the current text.
         private void InvalidateResult(bool keepPreview = false, bool keepProposals = false) {
             resultVersion = -1; resultKey = resultSource = null;
-            correctionVersion = reformulationVersion = -1;
-            apply.Enabled = reformulate.Enabled = copy.Enabled = false;
+            correctionVersion = reformulationVersion = adviceVersion = -1;
+            apply.Enabled = reformulate.Enabled = copy.Enabled = adviceReformulate.Enabled = false;
             if (keepProposals && (resultKept || reformulationKept)) { UpdateProposalActions(); return; }
             resultKept = reformulationKept = false; keptKey = null;
             if (textTabs.SelectedTab != inputPage) textTabs.SelectedTab = inputPage;
@@ -885,6 +906,7 @@ namespace CorrecteurMail {
             // the live preview. ShowDraftPreview replaces its content directly.
             if (result.TextLength > 0) result.Clear();
             if (reformulated.TextLength > 0) reformulated.Clear();
+            if (adviceBox.TextLength > 0) adviceBox.Clear();
             if (keepPreview) return;
             SetExpanded(manualMode);
         }
@@ -970,7 +992,9 @@ namespace CorrecteurMail {
             if (paused) { runner.Stop(); state.Version++; InvalidateResult(); retry.Enabled = false; status.Text = "En pause · aucune nouvelle lecture ni transmission."; }
             else { requested = -1; state.Changed = DateTime.UtcNow; retry.Enabled = !busy && !String.IsNullOrWhiteSpace(state.Text); if (manualMode) apply.Enabled = !busy; status.Text = manualMode ? "Texte manuel · cliquez sur Corriger." : "Aperçu repris · cliquez sur Corriger."; }
         }
-        private async Task Request(bool fluent) {
+        private Task Request(bool fluent) { return RequestCore(fluent, null); }
+        // advice: the answer of the Avis tab, which the reformulation must follow.
+        private async Task RequestCore(bool fluent, string advice) {
             if (busy || closing || paused || settingsOpen) return;
             using (var draft = CurrentDraft()) {
                 if (draft == null) { status.Text = "Ouvrez le brouillon dans sa propre fenêtre OUTLOOK."; return; }
@@ -981,12 +1005,12 @@ namespace CorrecteurMail {
                 long version = state.Version; string key = state.Key, text = state.Text;
                 string previousProposal = resultVersion == version ? (SelectedProposal ?? (reformulationVersion == version ? reformulated : result)).Text : null;
                 TabPage previousPage = textTabs.SelectedTab;
-                requested = version; busy = true; apply.Enabled = reformulate.Enabled = retry.Enabled = copy.Enabled = false;
+                requested = version; busy = true; apply.Enabled = reformulate.Enabled = retry.Enabled = copy.Enabled = adviceAsk.Enabled = adviceReformulate.Enabled = false;
                 requestStarted = DateTime.UtcNow; requestTitle = fluent ? "Reformulation" : "Correction stricte";
                 ShowDraftPreview(text);
-                status.Text = fluent ? "Reformulation en cours…" : "Correction stricte en cours…";
+                status.Text = advice != null ? "Reformulation selon l’avis en cours…" : fluent ? "Reformulation en cours…" : "Correction stricte en cours…";
                 try {
-                    string corrected = await runner.Correct(text, fluent);
+                    string corrected = await runner.Correct(text, fluent, advice);
                     if (closing || paused || state.Version != version) return;
                     if (String.IsNullOrWhiteSpace(corrected)) throw new InvalidOperationException(settings.ProviderName + " n’a pas renvoyé de correction exploitable. Cliquez sur Corriger.");
                     using (var current = CurrentDraft()) {
@@ -1027,6 +1051,32 @@ namespace CorrecteurMail {
                         }
                         SetExpanded(true);
                     }
+                } finally { busy = false; if (!closing) { retry.Enabled = CanCorrect; UpdateProposalActions(); } }
+            }
+        }
+        private async Task RequestAdvice() {
+            if (busy || closing || paused || settingsOpen) return;
+            using (var draft = CurrentDraft()) {
+                if (draft == null) { status.Text = "Ouvrez le brouillon dans sa propre fenêtre OUTLOOK."; return; }
+                Observe(draft);
+                if (String.IsNullOrWhiteSpace(state.Text)) return;
+                if (state.Text.Length > 30000) { status.Text = "Brouillon trop long (30 000 caractères maximum)."; return; }
+                long version = state.Version; string text = state.Text;
+                string question = adviceQuestion.Text.Trim(); if (question.Length == 0) question = "Donne ton avis sur ce mail.";
+                busy = true; apply.Enabled = reformulate.Enabled = retry.Enabled = copy.Enabled = adviceAsk.Enabled = adviceReformulate.Enabled = false;
+                requestStarted = DateTime.UtcNow; requestTitle = "Avis";
+                status.Text = "Avis en cours…";
+                try {
+                    string answer = await runner.Advise(text, question);
+                    if (closing || paused || state.Version != version) return;
+                    if (String.IsNullOrWhiteSpace(answer)) throw new InvalidOperationException(settings.ProviderName + " n’a pas renvoyé d’avis exploitable. Cliquez sur Demander l’avis.");
+                    using (var current = CurrentDraft()) {
+                        if (current == null || !state.Matches(version, current.Key, current.Text)) { status.Text = "Le brouillon a changé · demandez l’avis à nouveau."; return; }
+                    }
+                    adviceBox.Text = DisplayText(answer); adviceVersion = version;
+                    status.Text = "Avis reçu · « Reformuler selon cet avis » pour le suivre.";
+                } catch (Exception ex) {
+                    if (!closing && !paused && state.Version == version) status.Text = "Avis indisponible. " + (ex is InvalidOperationException ? ex.Message : "Cliquez sur Demander l’avis pour réessayer.");
                 } finally { busy = false; if (!closing) { retry.Enabled = CanCorrect; UpdateProposalActions(); } }
             }
         }

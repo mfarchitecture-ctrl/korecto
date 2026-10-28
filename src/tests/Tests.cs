@@ -16,8 +16,10 @@ namespace CorrecteurMail {
         internal TaskCompletionSource<string> Pending = new TaskCompletionSource<string>();
         internal int Calls, Stops;
         internal bool Fluent;
+        internal string LastAdvice, LastQuestion;
         public string Progress { get { return "Réponse simulée"; } }
-        public Task<string> Correct(string text, bool fluent) { Calls++; Fluent = fluent; return Pending.Task; }
+        public Task<string> Correct(string text, bool fluent, string advice = null) { Calls++; Fluent = fluent; LastAdvice = advice; return Pending.Task; }
+        public Task<string> Advise(string text, string question) { Calls++; LastQuestion = question; return Pending.Task; }
         public void Stop() { Stops++; } // Deliberately deliver late answers despite cancellation.
         public void Dispose() { Stop(); }
         internal void Next() { Pending = new TaskCompletionSource<string>(); }
@@ -121,7 +123,7 @@ namespace CorrecteurMail {
             if (payload.Contains("FAKE_EMPTY")) return;
             if (payload.Contains("FAKE_HANG")) { Thread.Sleep(10000); return; }
             Console.WriteLine("{\"type\":42}"); Console.WriteLine("{invalid json");
-            string correction = payload.Contains("FAKE_ARGUMENTS") ? String.Join("|", arguments) : "Réponse fictive, prête 😊.";
+            string correction = payload.Contains("FAKE_ARGUMENTS") ? String.Join("|", arguments) : payload.Contains("FAKE_PAYLOAD") ? payload.Substring(payload.LastIndexOf("Données utilisateur")) : "Réponse fictive, prête 😊.";
             if (claude && payload.Contains("FAKE_SCHEMA")) {
                 int schemaIndex = Array.IndexOf(arguments, "--json-schema");
                 new JavaScriptSerializer().DeserializeObject(arguments[schemaIndex + 1]);
@@ -204,7 +206,7 @@ namespace CorrecteurMail {
             } });
             await Test("Lancement sans brouillon : fenêtre visible, pas de masquage", async () => { using (var r = new Rig()) { r.Exists = false; await r.Tick(); await r.Tick(); return r.Window.Visible && r.Get<Button>("manual").Enabled; } });
             await Test("Mode Manuel : pas de masquage sans brouillon Outlook", async () => { using (var r = new Rig()) { await r.Ready(); r.Call("SwitchMode"); r.Exists = false; await r.Tick(); return r.Window.Visible; } });
-            await Test("Manuel vide : éditeur ouvert et trois onglets permanents", () => { using (var r = new Rig()) { r.Call("SwitchMode"); var tabs = r.Get<TabControl>("textTabs"); var input = r.Get<TextBox>("manualInput"); input.AppendText("Texte tapé directement"); return Value(!input.ReadOnly && input.Text == "Texte tapé directement" && tabs.Visible && tabs.TabPages.Count == 3 && tabs.SelectedTab == r.Get<TabPage>("inputPage") && r.Runner.Calls == 0); } });
+            await Test("Manuel vide : éditeur ouvert et quatre onglets permanents", () => { using (var r = new Rig()) { r.Call("SwitchMode"); var tabs = r.Get<TabControl>("textTabs"); var input = r.Get<TextBox>("manualInput"); input.AppendText("Texte tapé directement"); return Value(!input.ReadOnly && input.Text == "Texte tapé directement" && tabs.Visible && tabs.TabPages.Count == 4 && tabs.SelectedTab == r.Get<TabPage>("inputPage") && r.Runner.Calls == 0); } });
             await Test("Original, corrigé et reformulé sont conservés et copiés séparément", async () => { using (var r = new Rig()) {
                 const string correction = "Bonjour, les documents sont prêts.", fluent = "Bonjour, les documents sont prêts à vous être transmis.";
                 await r.Ready(correction); string original = r.Get<TextBox>("manualInput").Text;
@@ -466,6 +468,35 @@ namespace CorrecteurMail {
                 return blocked && tabs.SelectedTab == r.Get<TabPage>("reformulationPage");
             } });
             Check("Nouveautés : la version en cours figure dans la liste", AppAssets.Read(AppDomain.CurrentDomain.BaseDirectory, "NOUVEAUTES.txt").StartsWith("Version " + AppBrand.Version));
+            await Test("Onglet Avis : ouvert dès qu'il y a du texte, fermé sans texte, aucune demande avant le clic", async () => {
+                using (var empty = new Rig()) {
+                    empty.Exists = false; await empty.Tick(); var tabs = empty.Get<TabControl>("textTabs"); var handle = tabs.Handle;
+                    tabs.SelectedTab = empty.Get<TabPage>("advicePage"); if (tabs.SelectedTab != empty.Get<TabPage>("inputPage")) return false;
+                }
+                using (var r = new Rig()) {
+                    await r.Tick(); var tabs = r.Get<TabControl>("textTabs"); var handle = tabs.Handle; tabs.SelectedTab = r.Get<TabPage>("advicePage");
+                    return tabs.SelectedTab == r.Get<TabPage>("advicePage") && r.Runner.Calls == 0 && r.Get<Button>("adviceAsk").Enabled && !r.Get<Button>("adviceReformulate").Enabled;
+                }
+            });
+            await Test("Demander l'avis : question transmise, réponse affichée, mail intact", async () => { using (var r = new Rig()) {
+                await r.Tick(); r.Get<TextBox>("adviceQuestion").Text = "Mon mail est-il trop agressif ?";
+                var task = (Task)r.Call("RequestAdvice"); r.Runner.Pending.SetResult("Oui, trop sec : adoucir l'ouverture."); await task;
+                return r.Runner.Calls == 1 && r.Runner.LastQuestion == "Mon mail est-il trop agressif ?" && r.Get<TextBox>("adviceBox").Text == "Oui, trop sec : adoucir l'ouverture." && r.Range.Text == null && r.Get<Button>("adviceReformulate").Enabled && r.Get<Label>("status").Text.StartsWith("Avis reçu");
+            } });
+            await Test("Reformuler selon l'avis : avis transmis, reformulation dans l'onglet Reformulé", async () => { using (var r = new Rig()) {
+                await r.Tick(); var advice = (Task)r.Call("RequestAdvice"); r.Runner.Pending.SetResult("Plus ferme et plus court."); await advice;
+                r.Runner.Next(); r.Get<Button>("adviceReformulate").PerformClick(); r.Runner.Pending.SetResult("Bonjour, voici les documents. Merci de confirmer."); await Task.Delay(100);
+                return r.Runner.Fluent && r.Runner.LastAdvice == "Plus ferme et plus court." && r.Get<TabControl>("textTabs").SelectedTab == r.Get<TabPage>("reformulationPage") && r.Get<TextBox>("reformulated").Text.StartsWith("Bonjour, voici") && r.Range.Text == null;
+            } });
+            await Test("Avis périmé après modification du mail : Reformuler selon l'avis grisé", async () => { using (var r = new Rig()) {
+                await r.Tick(); var advice = (Task)r.Call("RequestAdvice"); r.Runner.Pending.SetResult("Plus court."); await advice;
+                r.Text += "Merci"; r.Observe();
+                return !r.Get<Button>("adviceReformulate").Enabled;
+            } });
+            await Test("Moteur réel de processus : Avis et reformulation selon l'avis transmis à l'IA", async () => { using (var engine = ProcessRunner()) {
+                string advice = await engine.Advise("FAKE_PAYLOAD", "Trop gentil ?"); string follow = await engine.Correct("FAKE_PAYLOAD", true, "Plus ferme"); string strict = await engine.Correct("FAKE_PAYLOAD", false);
+                return advice.Contains("\"mode\":\"AVIS\"") && advice.Contains("\"question\":\"Trop gentil ?\"") && follow.Contains("\"mode\":\"REFORMULER\"") && follow.Contains("\"avis\":\"Plus ferme\"") && strict.Contains("\"mode\":\"STRICT\"") && !strict.Contains("\"avis\"");
+            } });
             await Test("Reformuler utilise le mode explicite", async () => { using (var r = new Rig()) { var t = (Task)r.Call("Request", true); r.Runner.Pending.SetResult("Bonjour."); await t; return r.Runner.Fluent && r.Valid; } });
             await Test("Onglet Reformulé : aucune demande, seul le bouton Reformuler reformule", async () => { using (var r = new Rig()) {
                 await r.Ready(); r.Runner.Next();
