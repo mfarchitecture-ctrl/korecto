@@ -3,7 +3,7 @@
 ## Fait
 - Numéro de version unique (`AppBrand.Version` dans `src/AppSettings.cs`), affiché dans Paramètres et dans les Applications de Windows.
 - Installation, désinstallation et mise à jour par l'exe lui-même (`src/Installation.cs`).
-- Mise à jour depuis l'application (`src/Updater.cs`) : recherche de la dernière Release GitHub au démarrage, notification, bouton dans Paramètres, téléchargement contrôlé (taille, SHA-256, numéro de version), remplacement après fermeture, relance.
+- Mise à jour depuis l'application (`src/Updater.cs`) : recherche de la dernière Release GitHub au démarrage, bouton « Mise à jour disponible » dans la fenêtre, bouton dans Paramètres, téléchargement contrôlé (taille, SHA-256, numéro de version), remplacement après fermeture, relance.
 
 ## Publier une nouvelle version
 Tout est automatique : GitHub compile et publie (`.github/workflows/release.yml`).
