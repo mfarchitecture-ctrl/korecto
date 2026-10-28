@@ -18,5 +18,10 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          Get-Content src/tests/RESULTATS.txt -Encoding UTF8 | Select-Object -First 4
-          Get-Content src/tests/RESULTATS.txt -Encoding UTF8 | Select-String -Pattern '^FAIL'
+          if (Test-Path src/tests/RESULTATS.txt) {
+            Get-Content src/tests/RESULTATS.txt -Encoding UTF8 | Select-Object -First 4
+            Get-Content src/tests/RESULTATS.txt -Encoding UTF8 | Select-String -Pattern '^FAIL'
+          } else {
+            'Aucun rapport : les 8 dernières lignes du journal de progression suivent.'
+            Get-Content src/tests/PROGRES.txt -Encoding UTF8 | Select-Object -Last 8
+          }

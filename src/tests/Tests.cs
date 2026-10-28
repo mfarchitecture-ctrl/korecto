@@ -104,8 +104,10 @@ namespace CorrecteurMail {
         private static float DisplayScale(Control control) { using (var graphics = control.CreateGraphics()) return graphics.DpiY / 96f; }
         private static readonly List<string> Results = new List<string>();
         private static int failures;
-        private static void Check(string name, bool ok) { Results.Add((ok ? "OK   " : "FAIL ") + name); if (!ok) failures++; }
-        private static async Task Test(string name, Func<Task<bool>> test) { try { var pending = test(); if (await Task.WhenAny(pending, Task.Delay(5000)) != pending) throw new TimeoutException(name); Check(name, await pending); } catch (Exception ex) { Check(name + " [" + ex.GetBaseException().GetType().Name + ": " + ex.GetBaseException().Message + "]", false); } }
+        // Written as the tests go, so that a test which blocks the program can be named from the last lines.
+        private static void Progress(string line) { try { File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "PROGRES.txt"), line + "\r\n", Encoding.UTF8); } catch (IOException) { } }
+        private static void Check(string name, bool ok) { Results.Add((ok ? "OK   " : "FAIL ") + name); if (!ok) failures++; Progress((ok ? "OK   " : "FAIL ") + name); }
+        private static async Task Test(string name, Func<Task<bool>> test) { Progress("DEBUT " + name); try { var pending = test(); if (await Task.WhenAny(pending, Task.Delay(5000)) != pending) throw new TimeoutException(name); Check(name, await pending); } catch (Exception ex) { Check(name + " [" + ex.GetBaseException().GetType().Name + ": " + ex.GetBaseException().Message + "]", false); } }
         private static Task<bool> Value(bool value) { return Task.FromResult(value); }
         private static string Event(object value) { return new JavaScriptSerializer().Serialize(new { type = "item.completed", item = new { type = "agent_message", text = new JavaScriptSerializer().Serialize(new { texte = value }) } }); }
         private static string Parse(string value) { return AccountRunner.ReadCorrection(value, new JavaScriptSerializer()); }
@@ -133,6 +135,7 @@ namespace CorrecteurMail {
             if (payload.Contains("FAKE_EARLY")) Thread.Sleep(10000);
         }
         [STAThread] private static void Main(string[] args) {
+            try { File.Delete(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "PROGRES.txt")); } catch (IOException) { }
             // Tests never touch the real %LOCALAPPDATA%\Korecto of the user.
             Environment.SetEnvironmentVariable("KORECTO_DONNEES", Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TEMP", "DONNEES"));
             if (args.Length > 0 && (args[0] == "exec" || args[0] == "-p")) { FakeCli(args[0] == "-p", args); return; }

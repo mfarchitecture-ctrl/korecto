@@ -11,6 +11,7 @@ PARAMETRES_IA/
 # Fichiers générés par les tests et les compilations
 src/tests/TEMP/
 src/tests/RESULTATS.txt
+src/tests/PROGRES.txt
 src/tests/RELECTURE_*.txt
 src/tests/*.avant.*
 src/tests/AVANT_*
