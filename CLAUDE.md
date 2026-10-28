@@ -5,8 +5,8 @@
 - Ne jamais publier (étiquette `vX.Y.Z`, mise sur `main` pour une release) sans demande explicite. Avant la release : numéro de version dans `src/AppSettings.cs`, ligne en tête de `src/NOUVEAUTES.txt`, nombre de contrôles dans `README.md` et `.github/workflows/tests.yml`.
 - Les tests Windows se lancent par GitHub Actions (`tests.yml`, workflow_dispatch) : on ne peut pas compiler sur Linux.
 
-## À chaque réponse
-Terminer par la liste des corrections en attente de release (une ligne par correction : description, commit, résultat des tests Windows), pour que Maxime sache où il en est.
+## Liste des corrections en attente
+Ne pas la répéter à chaque message. La donner seulement quand Maxime la demande, ou quand une correction est ajoutée ou que la release se prépare (une ligne par correction : description, commit, résultat des tests Windows).
 
 ## Corrections en attente de release (prochaine : 1.0.3)
 1. Korecto reste affiché quand un menu ou une boîte de dialogue d'Outlook s'ouvre — `382fbd6`
