@@ -8,12 +8,5 @@
 ## Liste des corrections en attente
 Ne pas la répéter à chaque message. La donner seulement quand Maxime la demande, ou quand une correction est ajoutée ou que la release se prépare (une ligne par correction : description, commit, résultat des tests Windows).
 
-## Corrections en attente de release (prochaine : 1.0.4)
-1. Messages de progression et d'erreur : « reformulation » ou « avis » au lieu de « correction » selon le mode — `b3ceb8e`
-2. Lignes vides conservées (consignes), boutons de ton dans l'onglet Avis, mots modifiés surlignés dans Corrigé — `857144e`
-3. Onglet Avis : indications grises (champ et zone de réponse), barres de défilement aux couleurs du thème — `c7c82d0` à `02d5187`
-4. Onglets Corrigé et Reformulé : chacun s'ouvre seulement quand il a un contenu — `7d58e04`
-5. Avis structuré par l'IA (synthèse, points « • », recommandation) ; barre de défilement seulement quand le texte déborde — `ec2293c`
-6. Banc de test : journal de progression qui nomme le test bloquant — `9b669ee`
-
-Ajouter ici chaque correction après tests Windows, et vider la liste à chaque release.
+## Corrections en attente de release (prochaine : 1.0.5)
+Aucune pour l'instant (la 1.0.4 a été préparée le 28 octobre 2026). Ajouter ici chaque correction après tests Windows, et vider la liste à chaque release.

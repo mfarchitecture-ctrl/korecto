@@ -1,6 +1,6 @@
 name: Tests
 
-# Informatif : les 297 contrôles locaux (sans réseau ni vrai mail) à chaque envoi sur main.
+# Informatif : les 304 contrôles locaux (sans réseau ni vrai mail) à chaque envoi sur main.
 on:
   push:
     branches: [main]

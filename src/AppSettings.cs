@@ -9,7 +9,7 @@ using Microsoft.Win32;
 namespace CorrecteurMail {
     internal static class AppBrand {
         internal const string Name = "Korecto";
-        internal const string Version = "1.0.3";
+        internal const string Version = "1.0.4";
         internal static Icon LoadIcon(int size) { return LoadIcon(size, "App.ico"); }
         internal static Icon LoadNotificationIcon(int size) { return LoadIcon(size, "Notification.ico"); }
         private static Icon LoadIcon(int size, string resource) {

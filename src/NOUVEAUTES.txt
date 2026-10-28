@@ -1,3 +1,11 @@
+Version 1.0.4
+- Onglet Avis : réponse structurée (synthèse, points, recommandation), indications dans les champs vides, et boutons Plus ferme, Plus doux, Plus court, Plus formel pour reformuler en un clic.
+- Onglet Corrigé : les mots modifiés sont surlignés.
+- Corrigé et Reformulé ne s'ouvrent que lorsqu'ils ont un contenu.
+- Les lignes vides entre paragraphes sont conservées par l'IA.
+- Messages d'attente et d'erreur adaptés : reformulation, avis ou correction selon la demande.
+- Barres de défilement aux couleurs du thème, affichées seulement quand le texte déborde.
+
 Version 1.0.3
 - Nouvel onglet Avis : posez une question sur votre mail (« trop gentil ? trop agressif ? »), l'IA répond franchement, puis « Reformuler selon cet avis ».
 - Appliquer conserve les liens et les mentions @ tels quels et corrige le reste du texte.
