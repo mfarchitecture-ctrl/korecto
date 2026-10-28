@@ -32,6 +32,13 @@ namespace CorrecteurMail {
             uint id; GetWindowThreadProcessId(GetForegroundWindow(), out id);
             return foregroundProcess.IsOutlook(id);
         }
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr h, StringBuilder name, int size);
+        // Outlook's main and message windows are rctrl_renwnd32; a ribbon menu, drop-down or
+        // dialog of Outlook in front of the draft is only a passing window.
+        internal static bool OutlookPopupForeground() {
+            IntPtr window = GetForegroundWindow(); var name = new StringBuilder(64);
+            return OutlookForeground() && GetClassName(window, name, name.Capacity) > 0 && name.ToString() != "rctrl_renwnd32";
+        }
         internal static void Release(object o) { if (o != null && Marshal.IsComObject(o)) Marshal.ReleaseComObject(o); }
         internal static string Identity(object o) {
             IntPtr handle;
@@ -492,7 +499,7 @@ namespace CorrecteurMail {
         private ICorrectionRunner runner;
         private AiSettings settings;
         private readonly Func<Draft> readDraft;
-        private readonly Func<bool> outlookForeground;
+        private readonly Func<bool> outlookForeground, outlookPopup;
         private readonly NotifyIcon tray = new NotifyIcon();
         private readonly Icon notificationIcon;
         private readonly bool testMode;
@@ -543,7 +550,7 @@ namespace CorrecteurMail {
             if (value && suppressInitialVisibility) { suppressInitialVisibility = false; if (!IsHandleCreated) CreateHandle(); base.SetVisibleCore(false); return; }
             base.SetVisibleCore(value);
         }
-        internal Popup(bool testMode = false, ICorrectionRunner correctionRunner = null, Func<Draft> draftReader = null, Func<bool> foregroundReader = null, AiSettings aiSettings = null, string appearancePath = null, bool startInTray = false, bool internalMode = false) {
+        internal Popup(bool testMode = false, ICorrectionRunner correctionRunner = null, Func<Draft> draftReader = null, Func<bool> foregroundReader = null, AiSettings aiSettings = null, string appearancePath = null, bool startInTray = false, bool internalMode = false, Func<bool> popupReader = null) {
             SuspendLayout();
             this.testMode = testMode;
             this.internalMode = internalMode;
@@ -552,6 +559,7 @@ namespace CorrecteurMail {
             runner = correctionRunner ?? new AccountRunner(aiSettings: settings);
             readDraft = draftReader ?? Draft.Read;
             outlookForeground = foregroundReader ?? Native.OutlookForeground;
+            outlookPopup = popupReader ?? Native.OutlookPopupForeground;
             Text = AppBrand.Name;
             AppBrand.SetIcon(this);
             Font = new Font("Segoe UI", 9.5f);
@@ -930,6 +938,8 @@ namespace CorrecteurMail {
             bool foreground = outlookForeground();
             if (!foreground && (!Visible || !ContainsFocus)) { if (detected) Hide(); return false; }
             using (var draft = readDraft()) {
+                // A ribbon menu or dialog hides the draft from Outlook for a moment: keep Korecto as it is.
+                if (draft == null && foreground && outlookPopup()) return false;
                 if (hiddenByUser) {
                     if (!foreground || draft == null || draft.Key == state.Key && draft.Text == state.Text) return false;
                     hiddenByUser = false; ShowInTaskbar = true;

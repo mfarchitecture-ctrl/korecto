@@ -58,7 +58,7 @@ namespace CorrecteurMail {
         internal readonly FakeRunner Runner = new FakeRunner();
         internal readonly Popup Window;
         internal string Key = "mail-A", Text = "Bonjour, les document sont prêt.\r";
-        internal bool Exists = true, Foreground = true;
+        internal bool Exists = true, Foreground = true, Menu;
         internal int Reads;
         internal readonly FakeRange Range = new FakeRange();
         internal float DpiScale { get { using (var graphics = Window.CreateGraphics()) return graphics.DpiX / 96f; } }
@@ -68,7 +68,7 @@ namespace CorrecteurMail {
         }
         // liveRange: text written by Appliquer is read back, like Outlook; Range.Text = null stands for Ctrl+Z.
         internal Rig(bool liveRange = false) {
-            Window = new Popup(true, Runner, () => { Reads++; return Exists ? new Draft { Key = Key, Text = liveRange && Range.Text != null ? Range.Text : Text, Range = Range } : null; },() => Foreground, appearancePath: Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "TEMP", "THEME", "rig.theme.txt"));
+            Window = new Popup(true, Runner, () => { Reads++; return Exists ? new Draft { Key = Key, Text = liveRange && Range.Text != null ? Range.Text : Text, Range = Range } : null; },() => Foreground, appearancePath: Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "TEMP", "THEME", "rig.theme.txt"), popupReader: () => Menu);
             Window.Opacity = 0; Window.ShowInTaskbar = false; Window.Show();
         }
         internal T Get<T>(string name) { return (T)typeof(Popup).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic).GetValue(Window); }
@@ -177,6 +177,10 @@ namespace CorrecteurMail {
                 await r.Tick(); await r.Ready(); r.Exists = false; await r.Tick();
                 bool menuManual = false; foreach (ToolStripItem item in r.Get<NotifyIcon>("tray").ContextMenuStrip.Items) if (item.Text == "Mode manuel") menuManual = true;
                 return !r.Window.Visible && !r.Get<TabControl>("textTabs").Visible && r.Get<long>("resultVersion") < 0 && menuManual && !r.Window.IsDisposed;
+            } });
+            await Test("Menu ou boîte de dialogue Outlook ouvert : Korecto reste affiché avec sa correction", async () => { using (var r = new Rig()) {
+                await r.Tick(); await r.Ready(); r.Exists = false; r.Menu = true; await r.Tick();
+                return r.Window.Visible && r.Get<long>("resultVersion") >= 0 && r.Get<TextBox>("result").TextLength > 0;
             } });
             await Test("Nouveau brouillon après masquage : Korecto réapparaît seul", async () => { using (var r = new Rig()) {
                 await r.Tick(); await r.Ready(); r.Exists = false; await r.Tick(); bool hidden = !r.Window.Visible;
