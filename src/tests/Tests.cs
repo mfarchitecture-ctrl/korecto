@@ -513,7 +513,7 @@ namespace CorrecteurMail {
                     r.Exists = false; await r.Tick(); closed = started && outlook && r.Get<bool>("manualMode") && r.Window.Visible;
                 }
                 using (var r = new Rig(false, preference)) {
-                    r.Call("SwitchMode"); await r.Tick(); r.Foreground = false; await r.Tick(); left = r.Get<bool>("manualMode");
+                    r.Call("SwitchMode"); await r.Tick(); r.Window.Hide(); r.Foreground = false; await r.Tick(); left = r.Get<bool>("manualMode");
                 }
                 return closed && left;
             });
