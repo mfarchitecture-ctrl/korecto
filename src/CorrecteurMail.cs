@@ -684,8 +684,8 @@ namespace CorrecteurMail {
             adviceLayout.Controls.Add(tones, 0, 3); adviceLayout.SetColumnSpan(tones, 2);
             advicePage.Controls.Add(adviceLayout);
             textTabs.Dock = DockStyle.Fill; textTabs.TabPages.AddRange(new [] { inputPage, resultPage, reformulationPage, advicePage }); textTabs.Visible = false;
-            // Corrigé and Reformulé open only once a first proposal exists; Avis as soon as there is a text.
-            ((DarkTabs)textTabs).Available = page => page == inputPage || (page == advicePage ? !String.IsNullOrWhiteSpace(state.Text) : result.TextLength > 0 || reformulated.TextLength > 0);
+            // Each tab opens only when it has something to show; Avis as soon as there is a text.
+            ((DarkTabs)textTabs).Available = page => page == inputPage || (page == advicePage ? !String.IsNullOrWhiteSpace(state.Text) : page == resultPage ? result.TextLength > 0 : reformulated.TextLength > 0);
             result.TextChanged += (s,e) => textTabs.Invalidate(); reformulated.TextChanged += (s,e) => textTabs.Invalidate(); manualInput.TextChanged += (s,e) => textTabs.Invalidate();
             // Opening a tab never calls the AI: only the Reformuler button asks for a reformulation.
             textTabs.SelectedIndexChanged += (s,e) => {
