@@ -493,6 +493,12 @@ namespace CorrecteurMail {
                 r.Text += "Merci"; r.Observe();
                 return !r.Get<Button>("adviceReformulate").Enabled;
             } });
+            await Test("Progression : le texte annonce la reformulation ou l'avis, pas une correction", async () => { using (var engine = ProcessRunner()) {
+                await engine.Correct("FAKE_NORMAL", true); string reformulation = engine.Progress;
+                await engine.Advise("FAKE_NORMAL", "Question"); string advice = engine.Progress;
+                await engine.Correct("FAKE_NORMAL", false);
+                return reformulation == "Reformulation reçue." && advice == "Avis reçu." && engine.Progress == "Correction reçue.";
+            } });
             await Test("Moteur réel de processus : Avis et reformulation selon l'avis transmis à l'IA", async () => { using (var engine = ProcessRunner()) {
                 string advice = await engine.Advise("FAKE_PAYLOAD", "Trop gentil ?"); string follow = await engine.Correct("FAKE_PAYLOAD", true, "Plus ferme"); string strict = await engine.Correct("FAKE_PAYLOAD", false);
                 return advice.Contains("\"mode\":\"AVIS\"") && advice.Contains("\"question\":\"Trop gentil ?\"") && follow.Contains("\"mode\":\"REFORMULER\"") && follow.Contains("\"avis\":\"Plus ferme\"") && strict.Contains("\"mode\":\"STRICT\"") && !strict.Contains("\"avis\"");
@@ -554,7 +560,7 @@ namespace CorrecteurMail {
             await Test("Processus sans réponse produit une erreur exploitable", async () => { using (var engine = ProcessRunner()) return await Error(engine.Correct("FAKE_EMPTY", false), "exploitable"); });
             await Test("Authentification expirée signalée", async () => { using (var engine = ProcessRunner()) return await Error(engine.Correct("FAKE_AUTH", false), "renouveler"); });
             await Test("Quota épuisé signalé", async () => { using (var engine = ProcessRunner()) return await Error(engine.Correct("FAKE_QUOTA", false), "Limite"); });
-            await Test("Délai dépassé arrête le processus", async () => { using (var engine = ProcessRunner(350)) { var watch = Stopwatch.StartNew(); bool valid = await Error(engine.Correct("FAKE_HANG", false), "Aucune correction"); return valid && watch.ElapsedMilliseconds < 3000; } });
+            await Test("Délai dépassé arrête le processus", async () => { using (var engine = ProcessRunner(350)) { var watch = Stopwatch.StartNew(); bool valid = await Error(engine.Correct("FAKE_HANG", false), "Aucune réponse"); return valid && watch.ElapsedMilliseconds < 3000; } });
             await Test("Annulation avant démarrage du processus", async () => { using (var engine = ProcessRunner()) { var task = engine.Correct("FAKE_HANG", false); engine.Stop(); return await Error(task, "annulée"); } });
             await Test("Annulation pendant exécution du processus", async () => { using (var engine = ProcessRunner()) { var task = engine.Correct("FAKE_HANG", false); await Task.Delay(250); engine.Stop(); return await Error(task, "annulée"); } });
             await Test("Réessai moteur après annulation", async () => { using (var engine = ProcessRunner()) { var task = engine.Correct("FAKE_HANG", false); await Task.Delay(250); engine.Stop(); if (!await Error(task, "annulée")) return false; return (await engine.Correct("FAKE_NORMAL", false)).Contains("prête"); } });

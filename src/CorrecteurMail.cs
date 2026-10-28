@@ -264,14 +264,17 @@ namespace CorrecteurMail {
                 var info = command.StartInfo(ArgumentsFor(settings, root), root);
                 var p = new Process { StartInfo = info };
                 var answer = new TaskCompletionSource<string>();
+                // What the AI is doing, in the words the user expects: not "correction" for a reformulation or an avis.
+                string doing = mode == "AVIS" ? "l’avis" : mode == "REFORMULER" ? "la reformulation" : "la correction";
+                string received = mode == "AVIS" ? "Avis reçu." : mode == "REFORMULER" ? "Reformulation reçue." : "Correction reçue.";
                 string failure = "Connexion " + settings.ProviderName + " indisponible. Vérifiez l’application locale et vos limites d’utilisation.";
                 // Read completed messages while the process is alive. EOF is not a prerequisite for display.
                 p.OutputDataReceived += (sender, args) => {
                     if (String.IsNullOrWhiteSpace(args.Data)) return;
                     try {
                         string correction = settings.Provider == "claude" ? ReadClaudeCorrection(args.Data, json) : ReadCorrection(args.Data, json);
-                        if (correction != null) { Progress = "Correction reçue."; answer.TrySetResult(correction); }
-                        else if (args.Data.Contains("turn.started") || args.Data.Contains("\"type\":\"system\"")) Progress = settings.ProviderName + " prépare la correction…";
+                        if (correction != null) { Progress = received; answer.TrySetResult(correction); }
+                        else if (args.Data.Contains("turn.started") || args.Data.Contains("\"type\":\"system\"")) Progress = settings.ProviderName + " prépare " + doing + "…";
                         if (args.Data.Contains("\"error\"") || args.Data.Contains("turn.failed") || args.Data.Contains("\"is_error\":true") || args.Data.Contains("\"is_error\": true")) failure = Failure(args.Data, failure);
                     } catch (ArgumentException) { } catch (InvalidOperationException) { }
                 };
@@ -281,7 +284,7 @@ namespace CorrecteurMail {
                 };
                 lock (gate) {
                     if (disposed || ticket != cancellation) { p.Dispose(); throw new InvalidOperationException("Correction annulée."); }
-                    if (running != null) { p.Dispose(); throw new InvalidOperationException("Une correction est déjà en cours."); }
+                    if (running != null) { p.Dispose(); throw new InvalidOperationException("Une demande est déjà en cours."); }
                     // Start under the same lock as Stop: closing the window cannot miss this process.
                     try { p.Start(); running = p; } catch { p.Dispose(); throw; }
                 }
@@ -297,11 +300,11 @@ namespace CorrecteurMail {
                     }
                     while (!answer.Task.Wait(150)) {
                         lock (gate) { if (disposed || ticket != cancellation) throw new InvalidOperationException("Correction annulée."); }
-                        if (elapsed.Elapsed.TotalMilliseconds >= timeoutMs) throw new InvalidOperationException("Aucune correction reçue après " + (timeoutMs / 1000.0).ToString("0.#") + " secondes. Cliquez sur Corriger pour réessayer.");
+                        if (elapsed.Elapsed.TotalMilliseconds >= timeoutMs) throw new InvalidOperationException("Aucune réponse reçue après " + (timeoutMs / 1000.0).ToString("0.#") + " secondes. Cliquez sur le bouton pour réessayer.");
                         if (p.HasExited) {
                             // Allow the async output callback to consume the last buffered line.
                             if (answer.Task.Wait(1200)) break;
-                            throw new InvalidOperationException(p.ExitCode != 0 ? failure : settings.ProviderName + " n’a pas renvoyé de correction exploitable. Cliquez sur Corriger.");
+                            throw new InvalidOperationException(p.ExitCode != 0 ? failure : settings.ProviderName + " n’a pas renvoyé de réponse exploitable. Cliquez à nouveau sur le bouton.");
                         }
                     }
                     lock (gate) { if (disposed || ticket != cancellation) throw new InvalidOperationException("Correction annulée."); }
@@ -1028,7 +1031,7 @@ namespace CorrecteurMail {
                 try {
                     string corrected = await runner.Correct(text, fluent, advice);
                     if (closing || paused || state.Version != version) return;
-                    if (String.IsNullOrWhiteSpace(corrected)) throw new InvalidOperationException(settings.ProviderName + " n’a pas renvoyé de correction exploitable. Cliquez sur Corriger.");
+                    if (String.IsNullOrWhiteSpace(corrected)) throw new InvalidOperationException(settings.ProviderName + " n’a pas renvoyé de " + (fluent ? "reformulation" : "correction") + " exploitable. Cliquez sur " + (fluent ? "Reformuler." : "Corriger."));
                     using (var current = CurrentDraft()) {
                         if (current == null || !state.Matches(version, current.Key, current.Text)) { InvalidateResult(true, current != null && current.Key == keptKey); status.Text = "Le brouillon a changé · nouvelle correction nécessaire."; return; }
                     }
@@ -1056,11 +1059,11 @@ namespace CorrecteurMail {
                             status.Text = "Reformulation indisponible · proposition précédente conservée. " + ex.Message;
                         } else {
                             resultVersion = -1;
-                            string error = ex is InvalidOperationException ? ex.Message : "Correction interrompue ou indisponible. Cliquez sur Corriger pour réessayer.";
+                            string error = ex is InvalidOperationException ? ex.Message : (fluent ? "Reformulation" : "Correction") + " interrompue ou indisponible. Cliquez sur " + (fluent ? "Reformuler" : "Corriger") + " pour réessayer.";
                             // An earlier proposal kept in the tab is never replaced by an error message.
-                            if (fluent ? reformulationKept : resultKept) status.Text = "Correction indisponible · proposition précédente conservée. " + error;
+                            if (fluent ? reformulationKept : resultKept) status.Text = (fluent ? "Reformulation" : "Correction") + " indisponible · proposition précédente conservée. " + error;
                             else {
-                                status.Text = "Correction indisponible · cliquez sur Corriger.";
+                                status.Text = (fluent ? "Reformulation" : "Correction") + " indisponible · cliquez sur " + (fluent ? "Reformuler" : "Corriger") + ".";
                                 (fluent ? reformulated : result).Text = error;
                                 textTabs.SelectedTab = fluent ? reformulationPage : resultPage;
                             }
