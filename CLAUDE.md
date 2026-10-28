@@ -10,5 +10,6 @@ Ne pas la répéter à chaque message. La donner seulement quand Maxime la deman
 
 ## Corrections en attente de release (prochaine : 1.0.4)
 1. Messages de progression et d'erreur : « reformulation » ou « avis » au lieu de « correction » selon le mode — `b3ceb8e`
+2. Lignes vides conservées (consignes), boutons de ton dans l'onglet Avis, mots modifiés surlignés dans Corrigé — `857144e`
 
 Ajouter ici chaque correction après tests Windows, et vider la liste à chaque release.
