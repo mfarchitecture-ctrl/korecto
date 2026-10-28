@@ -14,7 +14,7 @@ Tout est automatique : GitHub compile et publie (`.github/workflows/release.yml`
 5. GitHub compile `Korecto.exe`, vérifie que l'étiquette correspond à la version de l'exe (sinon la Release est annulée), et publie la Release. Les Korecto installés proposent la mise à jour à leur prochain démarrage.
 
 ## Idées
-- Intégration au-delà d'Outlook classique : raccourci global avec presse-papiers, champs de texte d'autres applications, extension navigateur pour les messageries web, complément pour le nouvel Outlook.
+- Intégration au-delà d'Outlook classique : raccourci global avec presse-papiers, champs de texte d'autres applications, extension navigateur pour les messageries web (clic droit « Corriger avec Korecto » ; un premier essai existe dans l'historique git, à publier sur le Chrome Web Store pour une installation en un clic), complément pour le nouvel Outlook.
 - Signature de code de l'exe (supprime l'avertissement SmartScreen ; environ 100 à 400 € par an).
 - Licence du dépôt (à choisir).
 

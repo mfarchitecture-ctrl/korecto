@@ -667,7 +667,7 @@ namespace CorrecteurMail {
             FormClosed += (s,e) => ReleaseResources();
             AutoScaleDimensions = new SizeF(96, 96); ResumeLayout(true);
             Location = new Point(area.Right - Width - 20, area.Bottom - Height - 20);
-            if (!testMode) selectionAccess = new SelectionAccess(internalMode, ImportSelection, message => { if (!closing) status.Text = message; });
+            if (!testMode) selectionAccess = new SelectionAccess(ImportSelection, message => { if (!closing) status.Text = message; });
             if (internalMode) {
                 SetAvailableUpdate(new ReleaseInfo { Version = new Version(99, 0, 0) });
                 Shown += (s,e) => { if (!manualMode) ImportSelection("Bonjour,\r\n\r\nCe texte fictif permet de découvrir la version interne de Korecto.\r\n\r\nVous pouvez aussi sélectionner un texte dans une autre application, puis appuyer sur Alt + K."); };
@@ -1103,7 +1103,6 @@ namespace CorrecteurMail {
             return "IA et modèle demandés : " + ai.ProviderName + " / " + ai.Model + (ai.Provider == "chatgpt" ? ", effort faible." : ".");
         }
         [STAThread] private static void Main(string[] args) {
-            if (args.Length > 0 && args[0].StartsWith("chrome-extension://", StringComparison.Ordinal)) { SelectionAccess.BrowserHost(args[0]); return; }
             bool internalMode = Array.IndexOf(args, "--internal") >= 0;
             AiSettings internalAi = null;
             if (internalMode) {
@@ -1187,7 +1186,7 @@ namespace CorrecteurMail {
             if (args.Length > 0 && args[0] == "--desinstaller") { SelfInstaller.RunUninstallUi(); return; }
             if (args.Length > 0 && args[0] == "--appliquer-maj") { UpdateUi.RunApply(); return; }
             // A downloaded Korecto.exe offers to install itself; the installed copy and startup launches never ask.
-            if (!startupLaunch && !internalMode && Array.IndexOf(args, "--selection-start") < 0 && SelfInstaller.OfferInstall(Application.ExecutablePath)) return;
+            if (!startupLaunch && !internalMode && SelfInstaller.OfferInstall(Application.ExecutablePath)) return;
             bool created;
             using (var mutex = new Mutex(true, internalMode ? "Local\\KorectoInterne" : "Local\\CorrecteurMailChatGPT", out created)) {
                 if (!created) { if (!startupLaunch) MessageBox.Show("Korecto est déjà lancé. Retrouvez son icône près de l’horloge."); return; }
