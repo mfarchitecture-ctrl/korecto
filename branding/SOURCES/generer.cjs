@@ -1,11 +1,20 @@
 const fs = require('fs');
 const path = require('path');
-const sharp = require('C:/Users/laxim/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/sharp');
+const sharp = require('sharp');
+sharp.concurrency(1);
 const root = path.resolve(__dirname, '..');
 
 // Contour du logo choisi par l'utilisateur, repris de la référence sans épaississement.
 const contour = fs.readFileSync(path.join(__dirname, 'korecto-contour.txt'), 'utf8').trim();
-const mark = (color) => `<path fill="${color}" d="${contour}"/>`;
+// Keep the approved outline unchanged; center its visible bounds in the tile.
+// The source outline uses only absolute M/L coordinates and Z.
+if (/[^MLZ\d.\s-]/i.test(contour)) throw Error('Commandes de contour non prises en charge.');
+const coordinates = contour.match(/-?\d+(?:\.\d+)?/g).map(Number);
+const xs = [], ys = [];
+for (let i = 0; i < coordinates.length; i += 2) { xs.push(coordinates[i]); ys.push(coordinates[i + 1]); }
+const dx = 64 - (Math.min(...xs) + Math.max(...xs)) / 2;
+const dy = 64 - (Math.min(...ys) + Math.max(...ys)) / 2;
+const mark = (color) => `<path transform="translate(${dx.toFixed(3)} ${dy.toFixed(3)})" fill="${color}" d="${contour}"/>`;
 const svg = (variant) => `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 128 128">${variant === 'couleur' ? '<rect x="4" y="4" width="120" height="120" rx="28" fill="#087F83"/>' : ''}${mark(variant === 'sombre' ? '#18282B' : '#FFFFFF')}</svg>`;
 const put = (file, data) => fs.writeFileSync(path.join(root, file), data);
 
@@ -30,7 +39,8 @@ async function render(variant, size) {
 (async () => {
   for (const variant of ['couleur', 'clair', 'sombre']) put(`SOURCES/korecto-${variant}.svg`, svg(variant));
   const sizes = [16, 20, 24, 32, 40, 48, 64, 128, 256];
-  const frames = await Promise.all(sizes.map(async size => ({size, data: await render('couleur', size)})));
+  const frames = [];
+  for (const size of sizes) frames.push({size, data: await render('couleur', size)});
   put('APPLICATION/Korecto.ico', ico(frames));
   for (const size of [16, 32, 48, 64, 128, 256, 512, 1024]) put(`APPLICATION/korecto-${size}.png`, await render('couleur', size));
   put('WEB/favicon.ico', ico(frames.filter(f => [16, 32, 48].includes(f.size))));
@@ -76,6 +86,11 @@ async function render(variant, size) {
       checked++;
     }
   }
-  put('SOURCES/VERIFICATION.txt', `Exports contrôlés : ${checked}\nPNG : dimensions carrées, canal alpha transparent et opaque.\nICO : en-têtes, offsets et toutes les trames PNG décodés.\nPlanche APERCU.png : contrôle visuel, dont 16 et 32 px sans agrandissement.\n`);
+  // Update the embedded Windows assets from the same generated artwork.
+  const assets = path.resolve(root, '..', 'src', 'assets');
+  fs.copyFileSync(path.join(root, 'APPLICATION/Korecto.ico'), path.join(assets, 'Korecto.ico'));
+  fs.copyFileSync(path.join(root, 'APPLICATION/korecto-128.png'), path.join(assets, 'Korecto-128.png'));
+  fs.copyFileSync(path.join(root, 'NOTIFICATION/korecto-couleur.ico'), path.join(assets, 'Korecto-notification.ico'));
+  console.log(`Centrage du K : translation (${dx.toFixed(3)}, ${dy.toFixed(3)}) dans le repère 128 × 128.`);
   console.log(`${checked} exports vérifiés. Aperçu : ${path.join(root, 'APERCU.png')}`);
 })().catch(error => { console.error(error); process.exit(1); });

@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Korecto — sélection",
+  "version": "0.1.0",
+  "description": "Ouvrir le texte sélectionné dans Korecto, sans correction automatique.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuBfBrxjFNc2oeVyjSpyX7lFECDs2UrViyhaO+aZCb9DQ0EIf0Y0an/CzD8tEZIs80s9zbEQsehpwC3n6P71iUFHAMKnYM7AaLWa1VQap9BRZ7EZQ45vexLxVoPQZh31jAPX+22bLbkq9N3rRqJ+/IzPbH7blfLqh5xViU+1RkLudCig+NzUgbiwv4NrXCH7f3RufHMg8r0DgQ4FyXke6ak0yuun7CH/cCqE98IdJwAdFAQFJ7wNlKQ6Bn4/asSVbGSF1R7fVp9ty/GjqpjrZgoJjl4lfUvxlOOH5UW0mG9PdQy27pQSqbGrIJybxVtU8DYnIuRkK4YYBusaOBrW9XQIDAQAB",
+  "permissions": [
+    "contextMenus",
+    "nativeMessaging"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Korecto — état de la liaison",
+    "default_popup": "status.html"
+  },
+  "icons": {
+    "16": "icon-16.png",
+    "48": "icon-48.png",
+    "128": "icon-128.png"
+  }
+}

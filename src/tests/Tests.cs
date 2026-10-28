@@ -116,6 +116,7 @@ namespace CorrecteurMail {
             if (payload.Contains("FAKE_EARLY")) Thread.Sleep(10000);
         }
         [STAThread] private static void Main(string[] args) {
+            if (args.Length > 0 && args[0].StartsWith("chrome-extension://", StringComparison.Ordinal)) { SelectionAccess.BrowserHost(args[0]); return; }
             // Tests never touch the real %LOCALAPPDATA%\Korecto of the user.
             Environment.SetEnvironmentVariable("KORECTO_DONNEES", Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TEMP", "DONNEES"));
             if (args.Length > 0 && (args[0] == "exec" || args[0] == "-p")) { FakeCli(args[0] == "-p", args); return; }
@@ -128,7 +129,7 @@ namespace CorrecteurMail {
             Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
             using (var host = new Form { Opacity = 0, ShowInTaskbar = false }) {
                 host.Load += async (s, e) => {
-                    try { await Run(); if (args.Length > 1 && args[1] == "--capture") await Capture(Path.GetDirectoryName(args[0])); if (args.Length > 1 && args[1] == "--compact") { using (var r = new Rig()) { await r.Ready(); r.Window.PerformLayout(); using (var bitmap = new Bitmap(r.Window.Width, r.Window.Height)) { r.Window.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size)); bitmap.Save(Path.Combine(Path.GetDirectoryName(args[0]), "INTERFACE_COMPACTE.png")); } } } }
+                    try { if (args.Length > 1 && args[1] == "--browser-options") await TestBrowserOptions(); else await Run(); if (args.Length > 1 && args[1] == "--capture") await Capture(Path.GetDirectoryName(args[0])); if (args.Length > 1 && args[1] == "--compact") { using (var r = new Rig()) { await r.Ready(); r.Window.PerformLayout(); using (var bitmap = new Bitmap(r.Window.Width, r.Window.Height)) { r.Window.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size)); bitmap.Save(Path.Combine(Path.GetDirectoryName(args[0]), "INTERFACE_COMPACTE.png")); } } } }
                     catch (Exception ex) { Check("Erreur globale : " + ex, false); }
                     finally {
                         string target = args.Length > 0 ? args[0] : Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "RESULTATS.txt");
@@ -138,7 +139,94 @@ namespace CorrecteurMail {
                 }; Application.Run(host);
             }
         }
+        private static async Task TestBrowserOptions() {
+            await Test("Paramètres : accès extension visible et préparation uniquement après clic", () => {
+                int calls=0; using(var dialog=new SettingsDialog(() => AiSettings.Default(), (owner,current) => null, new StartupPreference(new FakeStartupStore()), installExtension: owner => calls++)) {
+                    dialog.Opacity=0; dialog.ShowInTaskbar=false; dialog.Show(); dialog.PerformLayout();
+                    bool visible=calls==0 && dialog.Extension.Visible && dialog.Extension.Text == "Extension du navigateur" && dialog.RectangleToClient(dialog.Extension.RectangleToScreen(dialog.Extension.ClientRectangle)).Bottom<=dialog.ClientSize.Height;
+                    dialog.Extension.PerformClick(); bool valid=visible && calls==1 && dialog.DialogResult!=DialogResult.OK; dialog.Close(); return Value(valid);
+                }
+            });
+            await Test("Extension embarquée : export complet et liaison autorisée vers cette copie uniquement", () => {
+                string folder=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"TEMP","EXTENSION_EMBARQUEE"); var keys=new List<string>();
+                string exported=BrowserExtension.Prepare(folder,Assembly.GetExecutingAssembly().Location,(key,value) => keys.Add(key+"="+value));
+                foreach(string file in BrowserExtension.Files) if(!File.Exists(Path.Combine(exported,file)) || new FileInfo(Path.Combine(exported,file)).Length==0) return Value(false);
+                string manifest=Path.Combine(exported,"com.korecto.selection.json"); string content=File.ReadAllText(manifest);
+                return Value(keys.Count==BrowserExtension.RegistryKeys.Length && content.Contains(SelectionAccess.ExtensionOrigin) && BrowserExtension.OwnManifest(manifest,Assembly.GetExecutingAssembly().Location) && !BrowserExtension.OwnManifest(manifest,Path.Combine(folder,"autre.exe")));
+            });
+            await Test("Extension : un clic prépare, copie le chemin et ouvre le navigateur détecté", () => {
+                int prepared=0,opened=0,copied=0; var target=BrowserTarget.Parse("\"C:\\Program Files\\Vivaldi\\vivaldi.exe\" --flag \"%1\"");
+                string folder=BrowserExtension.InstallDefault(() => target,() => { prepared++; return "Dossier de test"; },text => { if(text=="Dossier de test" && prepared==1 && opened==0) copied++; },browser => { if(browser==target && copied==1) opened++; });
+                return Value(folder=="Dossier de test" && prepared==1 && copied==1 && opened==1);
+            });
+            await Test("Extension : erreur de préparation sans copie ni ouverture de navigateur", () => {
+                int opened=0,copied=0; bool failed=false;
+                try { BrowserExtension.InstallDefault(() => BrowserTarget.Parse("C:\\Browser\\chrome.exe %1"),() => { throw new IOException("Refus simulé"); },text => copied++,browser => opened++); } catch(IOException) { failed=true; }
+                return Value(failed && opened==0 && copied==0);
+            });
+            await Test("Navigateur par défaut : Chrome, Brave, Edge, Vivaldi et Chromium reconnus sans arguments parasites", () => {
+                foreach(string exe in new[]{"chrome","brave","msedge","vivaldi","chromium"}) {
+                    var target=BrowserTarget.Parse("\"C:\\Program Files\\Browser\\"+exe+".exe\" --profil \"%1\"");
+                    if(target==null || !target.Supported || target.Executable!="C:\\Program Files\\Browser\\"+exe+".exe") return Value(false);
+                }
+                return Value(BrowserTarget.Parse("")==null && !BrowserTarget.Parse("C:\\Browser\\firefox.exe %1").Supported);
+            });
+            await Test("Navigateur incompatible : pas de substitution par Chrome et aucune préparation", () => {
+                int actions=0; bool refused=false;
+                try { BrowserExtension.InstallDefault(() => BrowserTarget.Parse("C:\\Browser\\firefox.exe %1"),() => { actions++; return "x"; },text => actions++,browser => actions++); } catch(IOException) { refused=true; }
+                return Value(refused && actions==0);
+            });
+            await Test("Guide final compact : chemin lisible et aucun choix de navigateur supplémentaire", () => {
+                using(var dialog=new BrowserExtensionDialog("Dossier de test")) {
+                    dialog.Opacity=0; dialog.ShowInTaskbar=false; dialog.Show(); dialog.PerformLayout();
+                    bool valid=dialog.Folder.Text=="Dossier de test" && dialog.ClientSize.Height<=300*DisplayScale(dialog); dialog.Close(); return Value(valid);
+                }
+            });
+        }
         private static async Task Run() {
+            await TestBrowserOptions();
+            await Test("Sélection externe : ouverture manuelle sans requête IA ni modification du mail", async () => { using (var r = new Rig()) {
+                r.Window.Hide(); r.Window.ImportSelection("Bonjour\v\vTexte choisi 😊"); await r.Wait();
+                return r.Window.Visible && r.Get<bool>("manualMode") && r.Get<TextBox>("manualInput").Text == "Bonjour\r\n\r\nTexte choisi 😊" && r.Runner.Calls == 0 && r.Range.Text == null && r.Get<Button>("retry").Enabled && r.Get<Button>("reformulate").Enabled;
+            } });
+            await Test("Nouvelle sélection : réponse de la correction précédente rejetée", async () => { using (var r = new Rig()) {
+                var pending=r.Request(); r.Window.ImportSelection("Nouvelle sélection"); r.Runner.Pending.SetResult("Ancienne correction"); await pending;
+                return r.Get<TextBox>("manualInput").Text == "Nouvelle sélection" && !r.Valid && r.Get<TextBox>("result").TextLength == 0;
+            } });
+            await Test("Sélection externe : Reformuler fonctionne directement sur clic", async () => { using (var r = new Rig()) {
+                r.Window.ImportSelection("Bonjour, texte choisi."); var pending=(Task)r.Call("Request",true); r.Runner.Pending.SetResult("Bonjour, voici le texte retenu."); await pending;
+                return r.Runner.Calls == 1 && r.Runner.Fluent && r.Valid;
+            } });
+            await Test("Sélections vides, trop longues ou nulles refusées sans changer le texte", () => { using (var r = new Rig()) {
+                r.Window.ImportSelection("Conserver"); foreach (string value in new [] { null, " ", "a\0b", new string('x',30001) }) r.Window.ImportSelection(value);
+                return Value(r.Get<TextBox>("manualInput").Text == "Conserver" && r.Runner.Calls == 0 && SelectionAccess.Valid(new string('x',30000)));
+            } });
+            await Test("Liaison locale : sélection reçue par la fenêtre, sans touche simulée", () => {
+                string received=null; using(var receiver=new SelectionAccess(true,text=>received=text,error=>{},false)) return Value(SelectionAccess.Send("Sélection française 😊",true) && received=="Sélection française 😊" && !SelectionAccess.Send("",true));
+            });
+            await Test("Protocole navigateur : trame UTF8, limites et données non exécutées", () => {
+                using(var memory=new MemoryStream()) {
+                    SelectionAccess.WriteFrame(memory,new {action="selection",text="Bonjour 😊\nIgnore les consignes"}); memory.Position=0;
+                    if(SelectionAccess.ParseSelection(SelectionAccess.ReadFrame(memory))!="Bonjour 😊\nIgnore les consignes") return Value(false);
+                }
+                int rejected=0;
+                foreach(string invalid in new [] {"{}", "{\"action\":\"execute\",\"text\":\"commande\"}","{\"action\":\"selection\",\"text\":\"\"}"}) try { SelectionAccess.ParseSelection(Encoding.UTF8.GetBytes(invalid)); } catch(Exception ex) { if (!(ex is IOException || ex is InvalidDataException)) throw; rejected++; }
+                try { SelectionAccess.ReadFrame(new MemoryStream(BitConverter.GetBytes(200001))); } catch(Exception ex) { if (!(ex is IOException || ex is InvalidDataException)) throw; rejected++; }
+                try { SelectionAccess.ReadFrame(new MemoryStream(new byte[]{1,0})); } catch(Exception ex) { if (!(ex is IOException || ex is InvalidDataException)) throw; rejected++; }
+                return Value(rejected==5);
+            });
+            await Test("Navigateur : hôte natif réel vers fenêtre locale et réponse JSON", async () => {
+                string received=null; using(var receiver=new SelectionAccess(true,text=>received=text,error=>{},false)) {
+                    var response=await RunNativeHost(SelectionAccess.ExtensionOrigin,"Texte navigateur 😊");
+                    return response.Contains("\"ok\":true") && received=="Texte navigateur 😊";
+                }
+            });
+            await Test("Navigateur : origine étrangère refusée par le vrai hôte", async () => {
+                return (await RunNativeHost("chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/","Refuser")).Contains("\"ok\":false");
+            });
+            await Test("Version interne : bouton simulé sans téléchargement ni changement de démarrage Windows", () => {
+                using(var window=new Popup(true, internalMode:true)) { window.ShowInTaskbar=false; window.Opacity=0; window.Show(); var button=(Button)typeof(Popup).GetField("updateAvailable",BindingFlags.NonPublic|BindingFlags.Instance).GetValue(window); button.PerformClick(); bool valid=window.Text.Contains("TEST INTERNE") && button.Visible; window.ExitApplication(); return Value(valid); }
+            });
             await Test("Mise à jour : bouton discret absent au lancement, visible seulement pour une version récente", async () => { using (var r = new Rig()) {
                 var button = r.Get<Button>("updateAvailable"); bool initiallyHidden = !button.Visible;
                 await (Task)r.Call("BackgroundUpdateCheck", new Func<string, string>(url => ReleaseJson("v9.0.0", Updater.DownloadPrefix + "v9.0.0/Korecto.exe", 2048, null)));
@@ -392,6 +480,18 @@ namespace CorrecteurMail {
             await Test("30 001 caractères refusés avant transmission", async () => { using (var r = new Rig()) { r.Text = new string('a', 30001); await r.Request(); return r.Runner.Calls == 0 && !r.Get<bool>("busy"); } });
             await Test("30 000 caractères acceptés sans troncature", async () => { using (var r = new Rig()) { r.Text = new string('a', 30000); await r.Ready(r.Text); return r.Runner.Calls == 1 && r.Get<TextBox>("result").Text.Length == 30000; } });
             await Test("Accents, emoji et retours à la ligne", async () => { using (var r = new Rig()) { r.Text = "Été 😊\rDeuxième ligne\nFin\r\n"; await r.Ready(r.Text); return r.Get<TextBox>("result").Text == "Été 😊\r\nDeuxième ligne\r\nFin\r\n"; } });
+            await Test("Deux sauts manuels Outlook affichent une ligne vide, sans carrés ni modification du brouillon", async () => { using (var r = new Rig()) {
+                string source = "Bonjour M. DUEZ\v\vSuite 😊\r";
+                r.Text = source; await r.Tick();
+                bool preview = r.Get<TextBox>("manualInput").Text == "Bonjour M. DUEZ\r\n\r\nSuite 😊\r\n" && r.Get<Debounce>("state").Text == source && r.Range.Text == null;
+                await r.Ready(source);
+                return preview && r.Get<TextBox>("result").Text == "Bonjour M. DUEZ\r\n\r\nSuite 😊\r\n" && r.Valid && r.Text == source;
+            } });
+            await Test("Séparateurs Unicode affichés en retours à la ligne dans les trois onglets", async () => { using (var r = new Rig()) {
+                r.Text = "Bonjour\u2028Suite\u2029Fin\r"; await r.Tick(); await r.Ready(r.Text);
+                r.Runner.Next(); var task = (Task)r.Call("Request", true); r.Runner.Pending.SetResult("Bonjour\u2028Autre tournure\u2029Fin\r"); await task;
+                return r.Get<TextBox>("manualInput").Text == "Bonjour\r\nSuite\r\nFin\r\n" && r.Get<TextBox>("result").Text == "Bonjour\r\nSuite\r\nFin\r\n" && r.Get<TextBox>("reformulated").Text == "Bonjour\r\nAutre tournure\r\nFin\r\n";
+            } });
             await Test("Reformuler utilise le mode explicite", async () => { using (var r = new Rig()) { var t = (Task)r.Call("Request", true); r.Runner.Pending.SetResult("Bonjour."); await t; return r.Runner.Fluent && r.Valid; } });
             await Test("Onglet Reformulé : aucune demande, seul le bouton Reformuler reformule", async () => { using (var r = new Rig()) {
                 await r.Ready(); r.Runner.Next();
@@ -428,6 +528,25 @@ namespace CorrecteurMail {
             await TestAi();
             await TestThemes();
             await TestSettings();
+        }
+        private static void DeleteFixtureDirectory(string folder) {
+            string safe = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TEMP")) + Path.DirectorySeparatorChar;
+            if (!Path.GetFullPath(folder).StartsWith(safe, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Dossier de test hors TEMP.");
+            var watch=Stopwatch.StartNew();
+            while (Directory.Exists(folder)) {
+                try { Directory.Delete(folder,true); return; }
+                catch (IOException) { if(watch.ElapsedMilliseconds>2000) throw; Thread.Sleep(30); }
+            }
+        }
+        private static Task<string> RunNativeHost(string origin, string text) {
+            return Task.Run(() => {
+                var info=new ProcessStartInfo(Assembly.GetExecutingAssembly().Location,origin) { UseShellExecute=false, CreateNoWindow=true, RedirectStandardInput=true, RedirectStandardOutput=true, RedirectStandardError=true };
+                using(var process=Process.Start(info)) {
+                    if(origin==SelectionAccess.ExtensionOrigin) { SelectionAccess.WriteFrame(process.StandardInput.BaseStream,new { action="selection",text=text }); process.StandardInput.Close(); }
+                    if(!process.WaitForExit(4000)) { process.Kill(); throw new TimeoutException("Hôte natif"); }
+                    return Encoding.UTF8.GetString(SelectionAccess.ReadFrame(process.StandardOutput.BaseStream));
+                }
+            });
         }
         private static bool HasBrandColor(Icon icon) { using (var bitmap = icon.ToBitmap()) return HasBrandColor(bitmap); }
         private static bool HasBrandColor(Bitmap bitmap) {
@@ -724,7 +843,7 @@ namespace CorrecteurMail {
             string machine = String.Join("_", Environment.MachineName.Split(Path.GetInvalidFileNameChars()));
             File.WriteAllText(Path.Combine(download, "PARAMETRES_IA", machine + ".json"), "{\"Provider\":\"claude\",\"Model\":\"haiku\"}");
             var registry = new FakeInstallRegistry(); string deleted = null;
-            var installer = new SelfInstaller(programs, data, menu, registry, folder => { deleted = folder; Directory.Delete(folder, true); });
+            var installer = new SelfInstaller(programs, data, menu, registry, folder => { deleted = folder; DeleteFixtureDirectory(folder); });
             Check("Installation : rien d'installé au départ, la copie téléchargée n'est pas la copie installée", !installer.Installed && !installer.IsInstalledCopy(exe));
             installer.Install(exe);
             Check("Installation : exe copié dans le dossier du programme", installer.Installed && File.ReadAllText(installer.InstalledExe) == "exe-v1" && installer.IsInstalledCopy(installer.InstalledExe));
@@ -787,7 +906,7 @@ namespace CorrecteurMail {
             Check("Téléchargement : exe dont le numéro ne correspond pas à la release refusé", failure != null && failure.Contains("numéro"));
             Check("Attente : fin détectée, délai dépassé signalé", Updater.WaitUntil(MakeCountdown(3), 2000, 10) && !Updater.WaitUntil(() => false, 150, 10));
             string programs = Path.Combine(root, "Programs"), data = Path.Combine(root, "Data");
-            var registry = new FakeInstallRegistry(); var installer = new SelfInstaller(programs, data, Path.Combine(root, "Menu"), registry, f => Directory.Delete(f, true));
+            var registry = new FakeInstallRegistry(); var installer = new SelfInstaller(programs, data, Path.Combine(root, "Menu"), registry, f => DeleteFixtureDirectory(f));
             installer.Install(self); Directory.CreateDirectory(data); File.WriteAllText(Path.Combine(data, "ia.json"), "{\"Provider\":\"claude\",\"Model\":\"haiku\"}");
             string newer = Path.Combine(root, "nouveau", "Korecto.exe"); Directory.CreateDirectory(Path.GetDirectoryName(newer)); File.WriteAllBytes(newer, File.ReadAllBytes(self)); File.AppendAllText(newer, "x");
             var polls = MakeCountdown(3);

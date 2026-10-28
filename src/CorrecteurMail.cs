@@ -479,6 +479,9 @@ namespace CorrecteurMail {
         private readonly Button apply = new SoftButton(), reformulate = new SoftButton(), retry = new SoftButton { Primary = true }, pause = new SoftButton();
         private readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer(), updateTimer = new System.Windows.Forms.Timer();
         private ReleaseInfo availableUpdate;
+        private SelectionAccess selectionAccess;
+        private readonly bool internalMode;
+        private bool externalSelection;
         private readonly Debounce state = new Debounce();
         private readonly Dictionary<string, int> draftNumbers = new Dictionary<string, int>();
         // Texts Korecto already handled, per draft: a source and its strict correction, or a text
@@ -526,6 +529,7 @@ namespace CorrecteurMail {
         private void ReleaseResources() {
             if (resourcesReleased) return;
             resourcesReleased = true; closing = true; timer.Stop();
+            if (selectionAccess != null) selectionAccess.Dispose();
             if (runner != null) runner.Dispose();
             tray.Visible = false; tray.Dispose(); timer.Dispose(); updateTimer.Dispose(); tips.Dispose();
         }
@@ -537,9 +541,10 @@ namespace CorrecteurMail {
             if (value && suppressInitialVisibility) { suppressInitialVisibility = false; if (!IsHandleCreated) CreateHandle(); base.SetVisibleCore(false); return; }
             base.SetVisibleCore(value);
         }
-        internal Popup(bool testMode = false, ICorrectionRunner correctionRunner = null, Func<Draft> draftReader = null, Func<bool> foregroundReader = null, AiSettings aiSettings = null, string appearancePath = null, bool startInTray = false) {
+        internal Popup(bool testMode = false, ICorrectionRunner correctionRunner = null, Func<Draft> draftReader = null, Func<bool> foregroundReader = null, AiSettings aiSettings = null, string appearancePath = null, bool startInTray = false, bool internalMode = false) {
             SuspendLayout();
             this.testMode = testMode;
+            this.internalMode = internalMode;
             suppressInitialVisibility = startInTray;
             settings = (aiSettings ?? AiSettings.Default()).Copy();
             runner = correctionRunner ?? new AccountRunner(aiSettings: settings);
@@ -592,7 +597,7 @@ namespace CorrecteurMail {
                 if (busy) runner.Stop();
                 retry.Enabled = CanCorrect;
                 apply.Enabled = !busy && !paused;
-                reformulate.Enabled = false; textTabs.SelectedTab = inputPage;
+                reformulate.Enabled = externalSelection && !busy && !paused && !String.IsNullOrWhiteSpace(manualInput.Text); textTabs.SelectedTab = inputPage;
                 status.Text = "Texte manuel · cliquez sur Corriger.";
             };
             inputPage.Controls.Add(manualInput); resultPage.Controls.Add(result); reformulationPage.Controls.Add(reformulated);
@@ -629,6 +634,7 @@ namespace CorrecteurMail {
             updateAvailable.Click += async (s,e) => {
                 var pending = availableUpdate;
                 if (pending == null || closing) return;
+                if (internalMode) { status.Text = "Aperçu du bouton : aucune mise à jour téléchargée en mode test."; return; }
                 updateAvailable.Enabled = false;
                 try { await UpdateUi.Offer(this, pending, ExitApplication); }
                 finally { if (!IsDisposed && !closing) updateAvailable.Enabled = true; }
@@ -648,7 +654,7 @@ namespace CorrecteurMail {
             UpdateAiLabel();
             Palette.Apply(this);
             timer.Interval = 250; timer.Tick += async (s,e) => await Tick(); if (!testMode) timer.Start();
-            if (!testMode) {
+            if (!testMode && !internalMode) {
                 updateTimer.Interval = 8000;
                 updateTimer.Tick += async (s,e) => { updateTimer.Stop(); await BackgroundUpdateCheck(); };
                 if (UpdateUi.IsInstalledCopy() && new UpdatePreference().Enabled) { Updater.CleanOldDownloads(); updateTimer.Start(); }
@@ -656,6 +662,11 @@ namespace CorrecteurMail {
             FormClosed += (s,e) => ReleaseResources();
             AutoScaleDimensions = new SizeF(96, 96); ResumeLayout(true);
             Location = new Point(area.Right - Width - 20, area.Bottom - Height - 20);
+            if (!testMode) selectionAccess = new SelectionAccess(internalMode, ImportSelection, message => { if (!closing) status.Text = message; });
+            if (internalMode) {
+                SetAvailableUpdate(new ReleaseInfo { Version = new Version(99, 0, 0) });
+                Shown += (s,e) => { if (!manualMode) ImportSelection("Bonjour,\r\n\r\nCe texte fictif permet de découvrir la version interne de Korecto.\r\n\r\nVous pouvez aussi sélectionner un texte dans une autre application, puis appuyer sur Alt + K."); };
+            }
         }
         // Silent startup check: only an inline button, never a balloon or dialog.
         private async Task BackgroundUpdateCheck(Func<string, string> fetch = null) {
@@ -673,6 +684,7 @@ namespace CorrecteurMail {
         }
         private void UpdateAiLabel() {
             Text = AppBrand.Name + " · " + settings.ProviderName + " · " + settings.ModelName;
+            if (internalMode) Text += " · TEST INTERNE";
             tips.SetToolTip(ai, "Paramètres · démarrage Windows, thème et IA · " + settings.ProviderName + " / " + settings.ModelName);
             tips.SetToolTip(info, "Texte transmis à " + (settings.Provider == "claude" ? "Anthropic" : "OpenAI") + " avec votre compte connecté. Aucun envoi automatique de mail.");
         }
@@ -696,7 +708,7 @@ namespace CorrecteurMail {
             if (closing || settingsOpen) return;
             settingsOpen = true;
             try {
-                using (var dialog = new SettingsDialog(() => settings, ChooseAi, applyAi: SaveAi, checkUpdates: testMode ? (Func<Form, Task>)null : owner => UpdateUi.Interactive(owner, ExitApplication))) dialog.ShowDialog(this);
+                using (var dialog = new SettingsDialog(() => settings, ChooseAi, startupPreference: internalMode ? new StartupPreference(new InternalStartupStore()) : null, applyAi: SaveAi, checkUpdates: testMode || internalMode ? (Func<Form, Task>)null : owner => UpdateUi.Interactive(owner, ExitApplication))) dialog.ShowDialog(this);
             } finally {
                 settingsOpen = false; state.Changed = DateTime.UtcNow;
                 retry.Enabled = CanCorrect;
@@ -752,7 +764,7 @@ namespace CorrecteurMail {
             bool valid = !busy && !paused && resultVersion == state.Version && proposal != null;
             copy.Enabled = !busy && !paused && ShownProposal != null;
             apply.Enabled = manualMode ? !busy && !paused : valid && Integrity.SameNumbers(resultSource ?? "", proposal.Text);
-            reformulate.Enabled = !busy && !paused && resultVersion == state.Version;
+            reformulate.Enabled = !busy && !paused && (resultVersion == state.Version || externalSelection && manualMode && !String.IsNullOrWhiteSpace(state.Text));
         }
         private void SetOriginal(string text) {
             string displayed = DisplayText(text);
@@ -761,6 +773,7 @@ namespace CorrecteurMail {
             try { manualInput.Text = displayed; } finally { updatingInput = false; }
         }
         private void SwitchMode() {
+            externalSelection = false;
             if (busy) runner.Stop();
             manualMode = !manualMode;
             context.Text = manualMode ? "MODE MANUEL" : "OUTLOOK";
@@ -781,6 +794,18 @@ namespace CorrecteurMail {
             }
             reformulate.Enabled = false;
             Palette.Apply(this);
+        }
+        internal void ImportSelection(string text) {
+            if (closing || IsDisposed || !SelectionAccess.Valid(text)) return;
+            if (busy) runner.Stop();
+            if (!manualMode) SwitchMode();
+            externalSelection = true;
+            manualInput.Text = DisplayText(text); manualDraft = manualInput.Text;
+            state.Observe("manuel", manualInput.Text, DateTime.UtcNow); state.Version++; requested = -1;
+            InvalidateResult(); textTabs.SelectedTab = inputPage; SetExpanded(true);
+            RestoreFromTray(); Activate(); manualInput.Focus(); manualInput.SelectionStart = 0; manualInput.SelectionLength = 0;
+            retry.Enabled = CanCorrect; UpdateProposalActions();
+            status.Text = "Sélection reçue · choisissez Corriger ou Reformuler. Alt + K depuis une autre application.";
         }
         private void PasteManual() {
             if (!manualMode || busy || paused) return;
@@ -806,7 +831,10 @@ namespace CorrecteurMail {
                 status.Text = upToDate ? "Correction copiée · collez-la dans votre mail." : "Proposition précédente copiée · sans vos dernières modifications.";
             } catch (ExternalException) { status.Text = "Copie impossible · sélectionnez le texte puis Ctrl+C."; }
         }
-        private static string DisplayText(string text) { return text.Replace("\r\n", "\n").Replace("\r", "\n").Replace("\n", "\r\n"); }
+        // Word uses vertical tabs for manual (Shift+Enter) line breaks. WinForms
+        // TextBox shows those as missing glyphs unless converted for display.
+        // Keep the raw draft untouched for identity and stale-result validation.
+        private static string DisplayText(string text) { return text.Replace("\r\n", "\n").Replace("\r", "\n").Replace("\v", "\n").Replace("\u2028", "\n").Replace("\u2029", "\n").Replace("\n", "\r\n"); }
         private static bool SameWording(string left, string right) {
             return Regex.Replace(left.Trim(), @"\s+", " ") == Regex.Replace(right.Trim(), @"\s+", " ");
         }
@@ -1070,6 +1098,13 @@ namespace CorrecteurMail {
             return "IA et modèle demandés : " + ai.ProviderName + " / " + ai.Model + (ai.Provider == "chatgpt" ? ", effort faible." : ".");
         }
         [STAThread] private static void Main(string[] args) {
+            if (args.Length > 0 && args[0].StartsWith("chrome-extension://", StringComparison.Ordinal)) { SelectionAccess.BrowserHost(args[0]); return; }
+            bool internalMode = Array.IndexOf(args, "--internal") >= 0;
+            AiSettings internalAi = null;
+            if (internalMode) {
+                internalAi = AiSettingsStore.Load();
+                Environment.SetEnvironmentVariable("KORECTO_DONNEES", Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "DONNEES_TEST"));
+            }
             bool startupLaunch = Array.IndexOf(args, "--startup") >= 0;
             string root = AppDomain.CurrentDomain.BaseDirectory;
             if (args.Length > 0 && (args[0] == "--test-ui-account" || args[0] == "--test-manual-account")) {
@@ -1147,21 +1182,22 @@ namespace CorrecteurMail {
             if (args.Length > 0 && args[0] == "--desinstaller") { SelfInstaller.RunUninstallUi(); return; }
             if (args.Length > 0 && args[0] == "--appliquer-maj") { UpdateUi.RunApply(); return; }
             // A downloaded Korecto.exe offers to install itself; the installed copy and startup launches never ask.
-            if (!startupLaunch && SelfInstaller.OfferInstall(Application.ExecutablePath)) return;
+            if (!startupLaunch && !internalMode && Array.IndexOf(args, "--selection-start") < 0 && SelfInstaller.OfferInstall(Application.ExecutablePath)) return;
             bool created;
-            using (var mutex = new Mutex(true, "Local\\CorrecteurMailChatGPT", out created)) {
+            using (var mutex = new Mutex(true, internalMode ? "Local\\KorectoInterne" : "Local\\CorrecteurMailChatGPT", out created)) {
                 if (!created) { if (!startupLaunch) MessageBox.Show("Korecto est déjà lancé. Retrouvez son icône près de l’horloge."); return; }
                 Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
-                AppFolders.MigrateLegacy(Path.Combine(root, "PARAMETRES_IA"), AppFolders.Data);
+                if (!internalMode) AppFolders.MigrateLegacy(Path.Combine(root, "PARAMETRES_IA"), AppFolders.Data);
                 Palette.Use(AppearanceStore.LoadDark());
                 AiSettings settings = AiSettingsStore.Load();
+                if (settings == null && internalMode) settings = internalAi ?? AiSettings.Default();
                 if (settings == null) {
                     using (var dialog = new AiSettingsDialog()) {
                         if (dialog.ShowDialog() != DialogResult.OK) return;
                         settings = dialog.Selected;
                     }
                 }
-                Application.Run(new Popup(aiSettings: settings, startInTray: startupLaunch));
+                Application.Run(new Popup(aiSettings: settings, startInTray: startupLaunch, internalMode: internalMode));
             }
         }
     }
