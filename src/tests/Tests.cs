@@ -485,7 +485,7 @@ namespace CorrecteurMail {
             } });
             await Test("Reformuler selon l'avis : avis transmis, reformulation dans l'onglet Reformulé", async () => { using (var r = new Rig()) {
                 await r.Tick(); var advice = (Task)r.Call("RequestAdvice"); r.Runner.Pending.SetResult("Plus ferme et plus court."); await advice;
-                r.Runner.Next(); r.Get<Button>("adviceReformulate").PerformClick(); r.Runner.Pending.SetResult("Bonjour, voici les documents. Merci de confirmer."); await Task.Delay(100);
+                r.Get<TabControl>("textTabs").SelectedTab = r.Get<TabPage>("advicePage"); r.Runner.Next(); r.Get<Button>("adviceReformulate").PerformClick(); r.Runner.Pending.SetResult("Bonjour, voici les documents. Merci de confirmer."); await Task.Delay(100);
                 return r.Runner.Fluent && r.Runner.LastAdvice == "Plus ferme et plus court." && r.Get<TabControl>("textTabs").SelectedTab == r.Get<TabPage>("reformulationPage") && r.Get<TextBox>("reformulated").Text.StartsWith("Bonjour, voici") && r.Range.Text == null;
             } });
             await Test("Avis périmé après modification du mail : Reformuler selon l'avis grisé", async () => { using (var r = new Rig()) {

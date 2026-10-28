@@ -17,4 +17,6 @@ jobs:
       - name: Rapport
         if: always()
         shell: pwsh
-        run: Get-Content src/tests/RESULTATS.txt -Encoding UTF8 | Select-Object -First 60
+        run: |
+          Get-Content src/tests/RESULTATS.txt -Encoding UTF8 | Select-Object -First 4
+          Get-Content src/tests/RESULTATS.txt -Encoding UTF8 | Select-String -Pattern '^FAIL'
