@@ -371,6 +371,11 @@ namespace CorrecteurMail {
             };
             return button;
         }
+        [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)] private static extern int SetWindowTheme(IntPtr window, string appName, string idList);
+        // Scrollbars of text boxes follow the theme (dark scrollbars need the DarkMode_Explorer visual style).
+        internal static void ThemeScrollbars(Control box) {
+            if (box.IsHandleCreated) SetWindowTheme(box.Handle, IsDark ? "DarkMode_Explorer" : "Explorer", null);
+        }
         internal static void Apply(Control control) {
             bool muted = control.Tag as string == "theme-muted" || control.ForeColor.ToArgb() == Muted.ToArgb();
             if (control is Label && muted) control.Tag = "theme-muted";
@@ -381,6 +386,7 @@ namespace CorrecteurMail {
                 control.AccessibleName = "Passer au mode " + (IsDark ? "clair" : "sombre");
                 control.AccessibleDescription = "Thème " + (IsDark ? "sombre" : "clair") + " actif.";
             }
+            if (control is TextBoxBase) ThemeScrollbars(control);
             foreach (Control child in control.Controls) Apply(child);
             var form = control as Form; if (form != null) ApplyCaption(form);
             control.Invalidate(true);
@@ -389,11 +395,12 @@ namespace CorrecteurMail {
     // A text box that shows a muted hint while it is empty (the native hint does not exist for multiline boxes).
     internal sealed class HintTextBox : TextBox {
         internal string Hint = "";
+        internal Font HintFont;
         protected override void WndProc(ref Message m) {
             base.WndProc(ref m);
             if (m.Msg != 0x000F || TextLength > 0 || Hint.Length == 0) return;
             using (var graphics = Graphics.FromHwnd(Handle))
-                TextRenderer.DrawText(graphics, Hint, Font, new Rectangle(1, 1, Math.Max(0, ClientSize.Width - 2), Math.Max(0, ClientSize.Height - 2)), Palette.Muted, TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
+                TextRenderer.DrawText(graphics, Hint, HintFont ?? Font, new Rectangle(1, 1, Math.Max(0, ClientSize.Width - 2), Math.Max(0, ClientSize.Height - 2)), Palette.Muted, TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
         }
     }
     internal sealed class SoftButton : Button {
@@ -637,6 +644,7 @@ namespace CorrecteurMail {
             };
             // Corrigé shows the proposal with the changed words highlighted; the hidden text box stays the text that is copied and applied.
             result.Visible = false;
+            foreach (var box in new Control[] { manualInput, reformulated, resultView, adviceBox }) { var scrolling = box; scrolling.HandleCreated += (s,e) => Palette.ThemeScrollbars(scrolling); }
             resultView.Dock = DockStyle.Fill; resultView.ReadOnly = true; resultView.ScrollBars = RichTextBoxScrollBars.Vertical; resultView.BorderStyle = BorderStyle.None; resultView.DetectUrls = false; resultView.Font = new Font("Segoe UI", 11);
             resultView.BackColorChanged += (s,e) => RefreshChanges();
             result.TextChanged += (s,e) => resultView.Text = result.Text;
@@ -644,6 +652,7 @@ namespace CorrecteurMail {
             // Avis: a question about the draft, the answer, then a reformulation that follows it or a tone shortcut. Nothing leaves before a click.
             // Empty field with a muted hint; an empty question asks for a general opinion.
             adviceQuestion.Hint = "Votre question (vide = avis général)";
+            adviceBox.HintFont = new Font("Segoe UI", 9.5f);
             adviceBox.Hint = "Posez une question sur votre mail. Exemples : « Le ton est-il adapté ? », « Le message est-il clair ? », « Est-il trop direct ? ». Vous pourrez ensuite le reformuler dans le sens de la réponse.";
             adviceQuestion.MaxLength = 300; adviceQuestion.Font = new Font("Segoe UI", 10); adviceQuestion.BorderStyle = BorderStyle.FixedSingle;
             adviceQuestion.Dock = DockStyle.Fill; adviceQuestion.Margin = new Padding(0, 4, 8, 0);
