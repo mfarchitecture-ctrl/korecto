@@ -492,6 +492,14 @@ namespace CorrecteurMail {
                 r.Runner.Next(); var task = (Task)r.Call("Request", true); r.Runner.Pending.SetResult("Bonjour\u2028Autre tournure\u2029Fin\r"); await task;
                 return r.Get<TextBox>("manualInput").Text == "Bonjour\r\nSuite\r\nFin\r\n" && r.Get<TextBox>("result").Text == "Bonjour\r\nSuite\r\nFin\r\n" && r.Get<TextBox>("reformulated").Text == "Bonjour\r\nAutre tournure\r\nFin\r\n";
             } });
+            await Test("Onglets Corrigé et Reformulé inaccessibles avant une première proposition", async () => { using (var r = new Rig()) {
+                var tabs = r.Get<TabControl>("textTabs"); var input = r.Get<TabPage>("inputPage"); var handle = tabs.Handle;
+                tabs.SelectedTab = r.Get<TabPage>("resultPage"); bool blocked = tabs.SelectedTab == input;
+                tabs.SelectedTab = r.Get<TabPage>("reformulationPage"); blocked = blocked && tabs.SelectedTab == input;
+                await r.Ready(); tabs.SelectedTab = r.Get<TabPage>("reformulationPage");
+                return blocked && tabs.SelectedTab == r.Get<TabPage>("reformulationPage");
+            } });
+            Check("Nouveautés : la version en cours figure dans la liste", AppAssets.Read(AppDomain.CurrentDomain.BaseDirectory, "NOUVEAUTES.txt").StartsWith("Version " + AppBrand.Version));
             await Test("Reformuler utilise le mode explicite", async () => { using (var r = new Rig()) { var t = (Task)r.Call("Request", true); r.Runner.Pending.SetResult("Bonjour."); await t; return r.Runner.Fluent && r.Valid; } });
             await Test("Onglet Reformulé : aucune demande, seul le bouton Reformuler reformule", async () => { using (var r = new Rig()) {
                 await r.Ready(); r.Runner.Next();

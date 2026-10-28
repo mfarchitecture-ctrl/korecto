@@ -37,7 +37,7 @@ namespace CorrecteurMail {
     }
     internal static class AppAssets {
         internal static string Read(string directory, string name) {
-            if (name != "CONSIGNES.txt" && name != "response.schema.json") throw new ArgumentException("Ressource inconnue.");
+            if (name != "CONSIGNES.txt" && name != "response.schema.json" && name != "NOUVEAUTES.txt") throw new ArgumentException("Ressource inconnue.");
             string local = Path.Combine(directory, name);
             if (File.Exists(local)) return File.ReadAllText(local, Encoding.UTF8);
             using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("CorrecteurMail." + name)) {

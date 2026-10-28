@@ -1,0 +1,14 @@
+Version 1.0.2
+- Mise à jour signalée par un petit bouton « Mise à jour disponible » en haut de la fenêtre, au lieu d'une notification.
+- Onglets Corrigé et Reformulé accessibles seulement après une première correction ou reformulation.
+- Alt + K : importe le texte sélectionné dans une autre application, sans appel à l'IA.
+- Extension du navigateur (dans ⚙) : « Corriger avec Korecto » au clic droit sur un texte sélectionné.
+- Retours à la ligne de Word correctement affichés.
+- Logo recentré.
+- Ce numéro de version ouvre désormais la liste des nouveautés.
+
+Version 1.0.1
+- Mise à jour depuis l'application : recherche au démarrage et bouton dans ⚙.
+
+Version 1.0.0
+- Première version : correction et reformulation des brouillons Outlook, mode Manuel.

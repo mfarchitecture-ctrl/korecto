@@ -454,11 +454,13 @@ namespace CorrecteurMail {
             e.Graphics.Clear(Palette.Background);
             for (int i = 0; i < TabPages.Count; i++) {
                 var rect = GetTabRect(i);
-                TextRenderer.DrawText(e.Graphics, TabPages[i].Text, Font, rect, i == SelectedIndex ? Palette.Text : Palette.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+                TextRenderer.DrawText(e.Graphics, TabPages[i].Text, Font, rect, i == SelectedIndex ? Palette.Text : Available(TabPages[i]) ? Palette.Muted : Palette.Border, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
                 if (i == SelectedIndex) using (var pen = new Pen(Palette.Accent, 3)) e.Graphics.DrawLine(pen, rect.Left + 10, rect.Bottom - 2, rect.Right - 10, rect.Bottom - 2);
             }
         }
         protected override void OnSelectedIndexChanged(EventArgs e) { Invalidate(); base.OnSelectedIndexChanged(e); }
+        internal Func<TabPage, bool> Available = page => true;
+        protected override void OnSelecting(TabControlCancelEventArgs e) { if (e.TabPage != null && !Available(e.TabPage)) e.Cancel = true; base.OnSelecting(e); }
     }
     internal sealed class Popup : Form {
         private readonly Label status = new Label();
@@ -602,6 +604,9 @@ namespace CorrecteurMail {
             };
             inputPage.Controls.Add(manualInput); resultPage.Controls.Add(result); reformulationPage.Controls.Add(reformulated);
             textTabs.Dock = DockStyle.Fill; textTabs.TabPages.AddRange(new [] { inputPage, resultPage, reformulationPage }); textTabs.Visible = false;
+            // Corrigé and Reformulé open only once a first proposal exists.
+            ((DarkTabs)textTabs).Available = page => page == inputPage || result.TextLength > 0 || reformulated.TextLength > 0;
+            result.TextChanged += (s,e) => textTabs.Invalidate(); reformulated.TextChanged += (s,e) => textTabs.Invalidate();
             // Opening a tab never calls the AI: only the Reformuler button asks for a reformulation.
             textTabs.SelectedIndexChanged += (s,e) => {
                 UpdateProposalActions();

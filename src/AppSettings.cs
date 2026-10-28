@@ -87,7 +87,9 @@ namespace CorrecteurMail {
             var versionRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
             versionRow.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             versionRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); versionRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 250));
-            versionRow.Controls.Add(new Label { Text = "Version " + AppBrand.Version, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
+            var version = new LinkLabel { Text = "Version " + AppBrand.Version, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, LinkColor = Palette.Accent, ActiveLinkColor = Palette.Accent };
+            version.LinkClicked += (s,e) => MessageBox.Show(this, AppAssets.Read(AppDomain.CurrentDomain.BaseDirectory, "NOUVEAUTES.txt"), "Nouveautés de Korecto");
+            versionRow.Controls.Add(version, 0, 0);
             UpdateNow.Text = "Rechercher une mise à jour"; UpdateNow.Dock = DockStyle.Fill; UpdateNow.Margin = new Padding(3, 4, 0, 4); UpdateNow.Enabled = checkUpdates != null;
             UpdateNow.Click += async (s,e) => {
                 UpdateNow.Enabled = false; message.Text = "Recherche en cours…";
