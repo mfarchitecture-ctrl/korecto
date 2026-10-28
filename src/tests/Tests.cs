@@ -478,6 +478,11 @@ namespace CorrecteurMail {
                     return tabs.SelectedTab == r.Get<TabPage>("advicePage") && r.Runner.Calls == 0 && r.Get<Button>("adviceAsk").Enabled && !r.Get<Button>("adviceReformulate").Enabled;
                 }
             });
+            await Test("Avis : champ de question vide au départ, avis général demandé si on ne tape rien", async () => { using (var r = new Rig()) {
+                await r.Tick(); bool empty = r.Get<TextBox>("adviceQuestion").Text.Length == 0;
+                var task = (Task)r.Call("RequestAdvice"); r.Runner.Pending.SetResult("Plutôt clair."); await task;
+                return empty && r.Runner.LastQuestion == "Donne ton avis sur ce mail.";
+            } });
             await Test("Demander l'avis : question transmise, réponse affichée, mail intact", async () => { using (var r = new Rig()) {
                 await r.Tick(); r.Get<TextBox>("adviceQuestion").Text = "Mon mail est-il trop agressif ?";
                 var task = (Task)r.Call("RequestAdvice"); r.Runner.Pending.SetResult("Oui, trop sec : adoucir l'ouverture."); await task;

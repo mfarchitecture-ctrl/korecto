@@ -26,6 +26,7 @@ namespace CorrecteurMail {
     }
     internal static class Native {
         [DllImport("user32.dll")] internal static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wparam, string lparam);
         [DllImport("user32.dll")] internal static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
         private static readonly OutlookProcessCache foregroundProcess = new OutlookProcessCache();
         internal static bool OutlookForeground() {
@@ -631,7 +632,9 @@ namespace CorrecteurMail {
             result.TextChanged += (s,e) => resultView.Text = result.Text;
             inputPage.Controls.Add(manualInput); resultPage.Controls.Add(resultView); resultPage.Controls.Add(result); reformulationPage.Controls.Add(reformulated);
             // Avis: a question about the draft, the answer, then a reformulation that follows it or a tone shortcut. Nothing leaves before a click.
-            adviceQuestion.Text = "Donne ton avis sur ce mail."; adviceQuestion.MaxLength = 300; adviceQuestion.Font = new Font("Segoe UI", 10); adviceQuestion.BorderStyle = BorderStyle.FixedSingle;
+            // Empty field with a grey hint (shown even when focused); an empty question asks for a general opinion.
+            adviceQuestion.HandleCreated += (s,e) => Native.SendMessage(adviceQuestion.Handle, 0x1501, (IntPtr)1, "Votre question (vide = avis général)");
+            adviceQuestion.MaxLength = 300; adviceQuestion.Font = new Font("Segoe UI", 10); adviceQuestion.BorderStyle = BorderStyle.FixedSingle;
             adviceQuestion.Dock = DockStyle.Fill; adviceQuestion.Margin = new Padding(0, 4, 8, 0);
             adviceQuestion.KeyDown += (s,e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; adviceAsk.PerformClick(); } };
             adviceAsk.Text = "Demander l’avis"; adviceAsk.Dock = DockStyle.Fill; adviceAsk.Margin = Padding.Empty; adviceAsk.Enabled = false;
