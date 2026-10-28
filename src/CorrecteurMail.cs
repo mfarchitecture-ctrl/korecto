@@ -644,7 +644,7 @@ namespace CorrecteurMail {
             };
             // Corrigé shows the proposal with the changed words highlighted; the hidden text box stays the text that is copied and applied.
             result.Visible = false;
-            foreach (var text in new [] { manualInput, reformulated, adviceBox }) { var box = text; box.TextChanged += (s,e) => FitScrollbar(box); box.SizeChanged += (s,e) => FitScrollbar(box); }
+            foreach (var text in new [] { manualInput, reformulated, adviceBox }) { var box = text; box.TextChanged += (s,e) => FitScrollbar(box); box.SizeChanged += (s,e) => FitScrollbar(box); box.HandleCreated += (s,e) => FitScrollbar(box); }
             foreach (var box in new Control[] { manualInput, reformulated, resultView, adviceBox }) { var scrolling = box; scrolling.HandleCreated += (s,e) => Palette.ThemeScrollbars(scrolling); }
             resultView.Dock = DockStyle.Fill; resultView.ReadOnly = true; resultView.ScrollBars = RichTextBoxScrollBars.Vertical; resultView.BorderStyle = BorderStyle.None; resultView.DetectUrls = false; resultView.Font = new Font("Segoe UI", 11);
             resultView.BackColorChanged += (s,e) => RefreshChanges();
@@ -1069,15 +1069,20 @@ namespace CorrecteurMail {
             }
             resultView.Select(0, 0);
         }
-        // A vertical scrollbar only when the text does not fit.
-        private static void FitScrollbar(TextBox box) {
-            if (box.TextLength == 0 && box.ScrollBars == ScrollBars.None) return;
-            int lines = box.GetLineFromCharIndex(box.TextLength) + 1;
-            var wanted = lines * box.Font.Height > box.ClientSize.Height ? ScrollBars.Vertical : ScrollBars.None;
-            if (wanted == box.ScrollBars) return;
-            int start = box.SelectionStart, length = box.SelectionLength;
-            box.ScrollBars = wanted; box.Select(start, length);
-            if (box.Focused) box.ScrollToCaret();
+        // A vertical scrollbar only when the text does not fit. Changing it recreates the text box, which raises
+        // TextChanged again while its size is still 0: the guard and the size check stop that loop.
+        private bool fitting;
+        private void FitScrollbar(TextBox box) {
+            if (fitting || !box.IsHandleCreated || box.ClientSize.Height <= 0) return;
+            fitting = true;
+            try {
+                int lines = box.GetLineFromCharIndex(box.TextLength) + 1;
+                var wanted = lines * box.Font.Height > box.ClientSize.Height ? ScrollBars.Vertical : ScrollBars.None;
+                if (wanted == box.ScrollBars) return;
+                int start = box.SelectionStart, length = box.SelectionLength;
+                box.ScrollBars = wanted; box.Select(start, length);
+                if (box.Focused) box.ScrollToCaret();
+            } finally { fitting = false; }
         }
         private void EnsureHeight(int logicalHeight) {
             int needed = (int)Math.Round(logicalHeight * CurrentAutoScaleDimensions.Height / 96f);
