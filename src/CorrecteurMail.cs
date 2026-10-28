@@ -490,7 +490,6 @@ namespace CorrecteurMail {
         private ReleaseInfo availableUpdate;
         private SelectionAccess selectionAccess;
         private readonly bool internalMode;
-        private bool externalSelection;
         private readonly Debounce state = new Debounce();
         private readonly Dictionary<string, int> draftNumbers = new Dictionary<string, int>();
         // Texts Korecto already handled, per draft: a source and its strict correction, or a text
@@ -607,7 +606,7 @@ namespace CorrecteurMail {
                 if (busy) runner.Stop();
                 retry.Enabled = CanCorrect;
                 apply.Enabled = !busy && !paused;
-                reformulate.Enabled = externalSelection && !busy && !paused && !String.IsNullOrWhiteSpace(manualInput.Text); textTabs.SelectedTab = inputPage;
+                reformulate.Enabled = !busy && !paused && !String.IsNullOrWhiteSpace(manualInput.Text); textTabs.SelectedTab = inputPage;
                 status.Text = "Texte manuel · cliquez sur Corriger.";
             };
             inputPage.Controls.Add(manualInput); resultPage.Controls.Add(result); reformulationPage.Controls.Add(reformulated);
@@ -777,7 +776,8 @@ namespace CorrecteurMail {
             bool valid = !busy && !paused && resultVersion == state.Version && proposal != null;
             copy.Enabled = !busy && !paused && ShownProposal != null;
             apply.Enabled = manualMode ? !busy && !paused : valid && Integrity.SameNumbers(resultSource ?? "", proposal.Text);
-            reformulate.Enabled = !busy && !paused && (resultVersion == state.Version || externalSelection && manualMode && !String.IsNullOrWhiteSpace(state.Text));
+            // Reformuler also corrects: it is available as soon as there is text, like Corriger.
+            reformulate.Enabled = !busy && !paused && !String.IsNullOrWhiteSpace(state.Text);
         }
         private void SetOriginal(string text) {
             string displayed = DisplayText(text);
@@ -786,7 +786,6 @@ namespace CorrecteurMail {
             try { manualInput.Text = displayed; } finally { updatingInput = false; }
         }
         private void SwitchMode() {
-            externalSelection = false;
             if (busy) runner.Stop();
             manualMode = !manualMode;
             context.Text = manualMode ? "MODE MANUEL" : "OUTLOOK";
@@ -812,7 +811,6 @@ namespace CorrecteurMail {
             if (closing || IsDisposed || !SelectionAccess.Valid(text)) return;
             if (busy) runner.Stop();
             if (!manualMode) SwitchMode();
-            externalSelection = true;
             manualInput.Text = DisplayText(text); manualDraft = manualInput.Text;
             state.Observe("manuel", manualInput.Text, DateTime.UtcNow); state.Version++; requested = -1;
             InvalidateResult(); textTabs.SelectedTab = inputPage; SetExpanded(true);
