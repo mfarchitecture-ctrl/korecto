@@ -568,9 +568,9 @@ namespace CorrecteurMail {
             await Test("Barre de défilement : absente pour un texte court, présente seulement quand le texte déborde", async () => { using (var r = new Rig()) {
                 await r.Tick(); var tabs = r.Get<TabControl>("textTabs"); var handle = tabs.Handle; tabs.SelectedTab = r.Get<TabPage>("advicePage");
                 var box = r.Get<TextBox>("adviceBox"); var empty = box.ScrollBars;
-                box.Text = "Réponse courte."; var shortText = box.ScrollBars;
-                box.Text = String.Join("\r\n\r\n", new string[200]); var longText = box.ScrollBars;
-                box.Text = "Réponse courte."; var again = box.ScrollBars;
+                box.Text = "Réponse courte."; await Task.Delay(150); var shortText = box.ScrollBars;
+                box.Text = String.Join("\r\n\r\n", new string[200]); await Task.Delay(150); var longText = box.ScrollBars;
+                box.Text = "Réponse courte."; await Task.Delay(150); var again = box.ScrollBars;
                 return empty == ScrollBars.None && shortText == ScrollBars.None && longText == ScrollBars.Vertical && again == ScrollBars.None;
             } });
             Check("Avis : réponse structurée demandée à l'IA (synthèse, points, recommandation)", AppAssets.Read(AppDomain.CurrentDomain.BaseDirectory, "CONSIGNES.txt").Contains("« Recommandation : »") && AppAssets.Read(AppDomain.CurrentDomain.BaseDirectory, "CONSIGNES.txt").Contains("« • »"));

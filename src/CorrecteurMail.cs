@@ -644,7 +644,7 @@ namespace CorrecteurMail {
             };
             // Corrigé shows the proposal with the changed words highlighted; the hidden text box stays the text that is copied and applied.
             result.Visible = false;
-            foreach (var text in new [] { manualInput, reformulated, adviceBox }) { var box = text; box.TextChanged += (s,e) => FitScrollbar(box); box.SizeChanged += (s,e) => FitScrollbar(box); box.HandleCreated += (s,e) => FitScrollbar(box); }
+            foreach (var text in new [] { manualInput, reformulated, adviceBox }) { var box = text; box.TextChanged += (s,e) => QueueFit(box); box.SizeChanged += (s,e) => QueueFit(box); box.VisibleChanged += (s,e) => QueueFit(box); }
             foreach (var box in new Control[] { manualInput, reformulated, resultView, adviceBox }) { var scrolling = box; scrolling.HandleCreated += (s,e) => Palette.ThemeScrollbars(scrolling); }
             resultView.Dock = DockStyle.Fill; resultView.ReadOnly = true; resultView.ScrollBars = RichTextBoxScrollBars.Vertical; resultView.BorderStyle = BorderStyle.None; resultView.DetectUrls = false; resultView.Font = new Font("Segoe UI", 11);
             resultView.BackColorChanged += (s,e) => RefreshChanges();
@@ -1069,8 +1069,13 @@ namespace CorrecteurMail {
             }
             resultView.Select(0, 0);
         }
-        // A vertical scrollbar only when the text does not fit. Changing it recreates the text box, which raises
-        // TextChanged again while its size is still 0: the guard and the size check stop that loop.
+        // A vertical scrollbar only when the text does not fit. Changing it recreates the text box, which must never
+        // happen inside its own TextChanged or HandleCreated: the check is queued and runs once the message is done.
+        private readonly HashSet<TextBox> fitPending = new HashSet<TextBox>();
+        private void QueueFit(TextBox box) {
+            if (closing || IsDisposed || !IsHandleCreated || !fitPending.Add(box)) return;
+            BeginInvoke(new Action(() => { fitPending.Remove(box); if (!closing && !IsDisposed) FitScrollbar(box); }));
+        }
         private bool fitting;
         private void FitScrollbar(TextBox box) {
             if (fitting || !box.IsHandleCreated || box.ClientSize.Height <= 0) return;
