@@ -139,6 +139,19 @@ namespace CorrecteurMail {
             }
         }
         private static async Task Run() {
+            await Test("Mise à jour : bouton discret absent au lancement, visible seulement pour une version récente", async () => { using (var r = new Rig()) {
+                var button = r.Get<Button>("updateAvailable"); bool initiallyHidden = !button.Visible;
+                await (Task)r.Call("BackgroundUpdateCheck", new Func<string, string>(url => ReleaseJson("v9.0.0", Updater.DownloadPrefix + "v9.0.0/Korecto.exe", 2048, null)));
+                var screen = button.RectangleToScreen(button.ClientRectangle); var settings = r.Get<Button>("ai").RectangleToScreen(r.Get<Button>("ai").ClientRectangle);
+                bool offered = button.Visible && button.Enabled && button.Text == "Mise à jour disponible" && screen.Bottom <= settings.Top && r.Window.ClientRectangle.Contains(r.Window.RectangleToClient(screen)) && r.Runner.Calls == 0;
+                await (Task)r.Call("BackgroundUpdateCheck", new Func<string, string>(url => ReleaseJson("v" + AppBrand.Version, Updater.DownloadPrefix + "v" + AppBrand.Version + "/Korecto.exe", 2048, null)));
+                return initiallyHidden && offered && !button.Visible;
+            } });
+            await Test("Mise à jour : erreur réseau silencieuse sans bouton ni ouverture de fenêtre", async () => { using (var r = new Rig()) {
+                r.Window.Hide();
+                await (Task)r.Call("BackgroundUpdateCheck", new Func<string, string>(url => { throw new WebException("hors ligne simulé"); }));
+                return !r.Window.Visible && !r.Get<Button>("updateAvailable").Visible && r.Runner.Calls == 0;
+            } });
             Check("Processus déclaré DPI-aware : pas de grossissement bitmap à l'ouverture", IsProcessDPIAware());
             await Test("Sans mail : fenêtre réduite, Manuel accessible, aucun panneau d'accueil", () => { using (var r = new Rig()) return Value(r.ClientSize.Height <= 240 && !r.Get<TabControl>("textTabs").Visible && r.Get<Button>("manual").Enabled && !r.Get<Button>("expand").Enabled); });
             await Test("Brouillon quitté ou envoyé : Korecto se masque, notification et Manuel conservés", async () => { using (var r = new Rig()) {
@@ -768,9 +781,9 @@ namespace CorrecteurMail {
             string folder = Path.Combine(root, "telechargement");
             string path = Updater.DownloadForUpdate(downloadable, (url, target) => File.Copy(self, target), folder).GetAwaiter().GetResult();
             Check("Téléchargement : exe vérifié placé dans le dossier de mise à jour", path == Path.Combine(folder, "Korecto.exe") && File.Exists(path) && Sha(path) == downloadable.Digest);
-            string failure = null; try { Updater.DownloadForUpdate(downloadable, (url, target) => File.WriteAllBytes(target, new byte[3000]), folder).GetAwaiter().GetResult(); } catch (Exception ex) { failure = ex.Message; }
+            string failure = null; try { Updater.DownloadForUpdate(downloadable, (url, target) => File.WriteAllBytes(target, new byte[3000]), folder + "-corrompu").GetAwaiter().GetResult(); } catch (Exception ex) { failure = ex.Message; }
             Check("Téléchargement : fichier corrompu refusé", failure != null && failure.Contains("incomplet"));
-            failure = null; try { Updater.DownloadForUpdate(new ReleaseInfo { Version = new Version(9, 0, 0), AssetUrl = good, Size = downloadable.Size, Digest = downloadable.Digest }, (url, target) => File.Copy(self, target), folder).GetAwaiter().GetResult(); } catch (Exception ex) { failure = ex.Message; }
+            failure = null; try { Updater.DownloadForUpdate(new ReleaseInfo { Version = new Version(9, 0, 0), AssetUrl = good, Size = downloadable.Size, Digest = downloadable.Digest }, (url, target) => File.Copy(self, target), folder + "-version-invalide").GetAwaiter().GetResult(); } catch (Exception ex) { failure = ex.Message; }
             Check("Téléchargement : exe dont le numéro ne correspond pas à la release refusé", failure != null && failure.Contains("numéro"));
             Check("Attente : fin détectée, délai dépassé signalé", Updater.WaitUntil(MakeCountdown(3), 2000, 10) && !Updater.WaitUntil(() => false, 150, 10));
             string programs = Path.Combine(root, "Programs"), data = Path.Combine(root, "Data");

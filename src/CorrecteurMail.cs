@@ -465,6 +465,8 @@ namespace CorrecteurMail {
         private readonly Label context = new Label();
         private readonly Label info = new Label();
         private readonly Button ai = new SoftButton();
+        private readonly Button updateAvailable = new SoftButton();
+        private readonly TableLayoutPanel noticeRow = new TableLayoutPanel();
         private readonly Button theme;
         private readonly TextBox result = new TextBox(), reformulated = new TextBox();
         private readonly TextBox manualInput = new TextBox();
@@ -618,7 +620,21 @@ namespace CorrecteurMail {
             layout.RowStyles.Clear();
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 20)); layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44)); layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
-            layout.Controls.Add(info, 0, 0); layout.Controls.Add(brand, 0, 1); layout.Controls.Add(header, 0, 2); layout.Controls.Add(content, 0, 3); layout.Controls.Add(actions, 0, 4); Controls.Add(layout);
+            noticeRow.Dock = DockStyle.Fill; noticeRow.Margin = Padding.Empty; noticeRow.ColumnCount = 2; noticeRow.RowCount = 1;
+            noticeRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); noticeRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 0));
+            noticeRow.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); noticeRow.Controls.Add(info, 0, 0);
+            updateAvailable.Text = "Mise à jour disponible"; updateAvailable.AccessibleName = updateAvailable.Text;
+            updateAvailable.Font = new Font("Segoe UI", 8); updateAvailable.Dock = DockStyle.Fill; updateAvailable.Margin = Padding.Empty;
+            updateAvailable.Visible = false;
+            updateAvailable.Click += async (s,e) => {
+                var pending = availableUpdate;
+                if (pending == null || closing) return;
+                updateAvailable.Enabled = false;
+                try { await UpdateUi.Offer(this, pending, ExitApplication); }
+                finally { if (!IsDisposed && !closing) updateAvailable.Enabled = true; }
+            };
+            noticeRow.Controls.Add(updateAvailable, 1, 0);
+            layout.Controls.Add(noticeRow, 0, 0); layout.Controls.Add(brand, 0, 1); layout.Controls.Add(header, 0, 2); layout.Controls.Add(content, 0, 3); layout.Controls.Add(actions, 0, 4); Controls.Add(layout);
             apply.Enabled = reformulate.Enabled = retry.Enabled = false;
             expand.Enabled = false;
             apply.Click += (s,e) => { if (manualMode) PasteManual(); else Apply(); }; reformulate.Click += async (s,e) => await Request(true); retry.Click += async (s,e) => await Request(false);
@@ -633,7 +649,6 @@ namespace CorrecteurMail {
             Palette.Apply(this);
             timer.Interval = 250; timer.Tick += async (s,e) => await Tick(); if (!testMode) timer.Start();
             if (!testMode) {
-                tray.BalloonTipClicked += async (s,e) => { var pending = availableUpdate; if (pending != null && !closing) await UpdateUi.Offer(this, pending, ExitApplication); };
                 updateTimer.Interval = 8000;
                 updateTimer.Tick += async (s,e) => { updateTimer.Stop(); await BackgroundUpdateCheck(); };
                 if (UpdateUi.IsInstalledCopy() && new UpdatePreference().Enabled) { Updater.CleanOldDownloads(); updateTimer.Start(); }
@@ -642,14 +657,19 @@ namespace CorrecteurMail {
             AutoScaleDimensions = new SizeF(96, 96); ResumeLayout(true);
             Location = new Point(area.Right - Width - 20, area.Bottom - Height - 20);
         }
-        // One quiet check shortly after launch: a balloon near the clock, never a window in the way.
-        private async Task BackgroundUpdateCheck() {
+        // Silent startup check: only an inline button, never a balloon or dialog.
+        private async Task BackgroundUpdateCheck(Func<string, string> fetch = null) {
             try {
-                var release = await Updater.CheckAsync();
-                if (release == null || closing || IsDisposed) return;
-                availableUpdate = release;
-                tray.ShowBalloonTip(15000, "Korecto " + release.Version.ToString(3) + " disponible", "Cliquez ici pour mettre à jour.", ToolTipIcon.Info);
+                var release = await Updater.CheckAsync(fetch);
+                if (closing || IsDisposed) return;
+                SetAvailableUpdate(release);
             } catch (Exception ex) { if (!Updater.IsKnownError(ex)) throw; }
+        }
+        internal void SetAvailableUpdate(ReleaseInfo release) {
+            availableUpdate = release != null && Updater.IsNewer(AppBrand.Version, release.Version) ? release : null;
+            noticeRow.ColumnStyles[1].Width = availableUpdate == null ? 0 : 154 * CurrentAutoScaleDimensions.Width / 96f;
+            updateAvailable.Visible = availableUpdate != null;
+            tips.SetToolTip(updateAvailable, availableUpdate == null ? "" : "Installer Korecto " + availableUpdate.Version.ToString(3));
         }
         private void UpdateAiLabel() {
             Text = AppBrand.Name + " · " + settings.ProviderName + " · " + settings.ModelName;
