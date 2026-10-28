@@ -9,4 +9,6 @@
 Ne pas la répéter à chaque message. La donner seulement quand Maxime la demande, ou quand une correction est ajoutée ou que la release se prépare (une ligne par correction : description, commit, résultat des tests Windows).
 
 ## Corrections en attente de release (prochaine : 1.0.4)
-Aucune pour l'instant (la 1.0.3 a été préparée le 28 octobre 2026). Ajouter ici chaque correction après tests Windows, et vider la liste à chaque release.
+1. Messages de progression et d'erreur : « reformulation » ou « avis » au lieu de « correction » selon le mode — `b3ceb8e`
+
+Ajouter ici chaque correction après tests Windows, et vider la liste à chaque release.
