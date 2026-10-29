@@ -90,7 +90,18 @@ namespace CorrecteurMail {
         private static bool lastInline;
         internal object Inspector, Item, Document, Range;
         internal string Key, Text;
+        internal bool SelectionOnly;
+        // Restrict to the author range, excluding signature and quoted history. Never silently
+        // expand an invalid/non-author selection into the full message.
+        internal static bool SelectionBounds(int bodyStart, int bodyEnd, int start, int end, out int from, out int to) {
+            from = bodyStart; to = bodyEnd;
+            if (start == end) return true;
+            if (end < start || start < bodyStart || end > bodyEnd) return false;
+            from = start; to = end; return true;
+        }
+        internal static volatile bool SelectionRefused;
         internal static Draft Read() {
+            SelectionRefused = false;
             if (SyntheticTest) return new Draft { Key = "brouillon-fictif", Text = "Bonjour,\rLes document sont prêt.\rMerci\r" };
             object app = null, inspector = null, item = null, doc = null, range = null, bookmarks = null;
             try {
@@ -137,8 +148,19 @@ namespace CorrecteurMail {
                         }
                     } finally { Native.Release(markedRange); Native.Release(bookmark); }
                 }
+                bool selectionOnly = false;
+                object windows = null, window = null, selection = null, selected = null;
+                try {
+                    windows = ((dynamic)doc).Windows; window = ((dynamic)windows).Item(1);
+                    selection = ((dynamic)window).Selection; selected = ((dynamic)selection).Range;
+                    int from, to, start = (int)((dynamic)selected).Start, end = (int)((dynamic)selected).End;
+                    if (start != end && ((int)((dynamic)selection).Type != 2 || (int)((dynamic)selected).StoryType != 1)) { SelectionRefused = true; return null; }
+                    if (!SelectionBounds((int)((dynamic)range).Start, (int)((dynamic)range).End, start, end, out from, out to)) { SelectionRefused = true; return null; }
+                    selectionOnly = start != end;
+                    if (selectionOnly) { ((dynamic)range).SetRange(from, to); identity += ":selection:" + from + ":" + to; }
+                } finally { Native.Release(selected); Native.Release(selection); Native.Release(window); Native.Release(windows); }
                 var result = new Draft { Inspector = inspector, Item = item, Document = doc, Range = range,
-                    Key = identity, Text = Convert.ToString(((dynamic)range).Text) ?? "" };
+                    Key = identity, SelectionOnly = selectionOnly, Text = Convert.ToString(((dynamic)range).Text) ?? "" };
                 lastInline = inline;
                 inspector = item = doc = range = null;
                 return result;
@@ -157,6 +179,7 @@ namespace CorrecteurMail {
         string Progress { get; }
         Task<string> Correct(string text, bool fluent, string advice = null);
         Task<string> Advise(string text, string question);
+        Task<string> Subject(string text);
         void Stop();
     }
     internal sealed class AccountRunner : ICorrectionRunner {
@@ -239,6 +262,7 @@ namespace CorrecteurMail {
         }
         public Task<string> Correct(string text, bool fluent, string advice = null) { return Ask(fluent ? "REFORMULER" : "STRICT", text, null, advice); }
         public Task<string> Advise(string text, string question) { return Ask("AVIS", text, question, null); }
+        public Task<string> Subject(string text) { return Ask("OBJET", text, null, null); }
         private Task<string> Ask(string mode, string text, string question, string advice) {
             int ticket;
             lock (gate) { if (disposed) throw new ObjectDisposedException("AccountRunner"); ticket = cancellation; Progress = "Connexion à " + settings.ProviderName + "…"; }
@@ -257,6 +281,8 @@ namespace CorrecteurMail {
                 var json = new JavaScriptSerializer();
                 string rules = AppAssets.Read(root, "CONSIGNES.txt");
                 var data = new Dictionary<string, object> { { "mode", mode }, { "brouillon", text } };
+                string[] vocabulary = new VocabularyStore().Load();
+                if (vocabulary.Length > 0) data["lexique_metier"] = vocabulary;
                 if (question != null) data["question"] = question;
                 if (advice != null) data["avis"] = advice;
                 string payload = rules + "\n\nDonnées utilisateur :\n" + json.Serialize(data);
@@ -265,8 +291,8 @@ namespace CorrecteurMail {
                 var p = new Process { StartInfo = info };
                 var answer = new TaskCompletionSource<string>();
                 // What the AI is doing, in the words the user expects: not "correction" for a reformulation or an avis.
-                string doing = mode == "AVIS" ? "l’avis" : mode == "REFORMULER" ? "la reformulation" : "la correction";
-                string received = mode == "AVIS" ? "Avis reçu." : mode == "REFORMULER" ? "Reformulation reçue." : "Correction reçue.";
+                string doing = mode == "OBJET" ? "l’objet" : mode == "AVIS" ? "l’avis" : mode == "REFORMULER" ? "la reformulation" : "la correction";
+                string received = mode == "OBJET" ? "Objet reçu." : mode == "AVIS" ? "Avis reçu." : mode == "REFORMULER" ? "Reformulation reçue." : "Correction reçue.";
                 string failure = "Connexion " + settings.ProviderName + " indisponible. Vérifiez l’application locale et vos limites d’utilisation.";
                 // Read completed messages while the process is alive. EOF is not a prerequisite for display.
                 p.OutputDataReceived += (sender, args) => {
@@ -512,6 +538,7 @@ namespace CorrecteurMail {
         private readonly TabControl textTabs = new DarkTabs();
         private readonly TabPage inputPage = new TabPage("Texte d’origine"), resultPage = new TabPage("Corrigé"), reformulationPage = new TabPage("Reformulé"), advicePage = new TabPage("Avis");
         private readonly Button manual = new SoftButton(), copy = new SoftButton();
+        private readonly Button subject = new SoftButton();
         private readonly Button expand = new SoftButton();
         private readonly TableLayoutPanel layout = new TableLayoutPanel();
         private readonly ToolTip tips = new ToolTip();
@@ -613,8 +640,8 @@ namespace CorrecteurMail {
             context.Text = "OUTLOOK"; context.Dock = DockStyle.Fill; context.TextAlign = ContentAlignment.MiddleRight; context.ForeColor = Palette.Muted; context.Font = new Font("Segoe UI", 8); context.AutoEllipsis = true;
             brand.Controls.Add(context, 1, 0);
             theme = Palette.CreateToggle(appearancePath, message => status.Text = message); theme.Margin = new Padding(3, 6, 0, 6); brand.Controls.Add(theme, 2, 0);
-            var header = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
-            header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 86));
+            var header = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, Margin = Padding.Empty };
+            header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 72)); header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 86));
             header.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             status.Dock = DockStyle.Fill; status.Text = "Ouvrez un brouillon OUTLOOK.\nPuis cliquez sur Corriger.";
             status.AutoEllipsis = true; status.ForeColor = Palette.Muted; status.TextAlign = ContentAlignment.MiddleLeft;
@@ -623,7 +650,9 @@ namespace CorrecteurMail {
             tips.SetToolTip(expand, "Afficher ou réduire la proposition. La fenêtre reste redimensionnable.");
             manual.Text = "Manuel"; manual.Dock = DockStyle.Fill; manual.Margin = new Padding(6, 6, 0, 6); manual.Click += (s,e) => SwitchMode();
             tips.SetToolTip(manual, "Coller un texte manuellement ou revenir à la lecture OUTLOOK.");
-            header.Controls.Add(status, 0, 0); header.Controls.Add(manual, 1, 0);
+            subject.Text = "Objet"; subject.Dock = DockStyle.Fill; subject.Margin = new Padding(6, 6, 0, 6); subject.Enabled = false; subject.Click += (s,e) => OpenSubject();
+            tips.SetToolTip(subject, "Proposer un objet à partir du texte affiché, puis le copier.");
+            header.Controls.Add(status, 0, 0); header.Controls.Add(subject, 1, 0); header.Controls.Add(manual, 2, 0);
             result.Dock = DockStyle.Fill; result.Multiline = true; result.ReadOnly = true; result.ScrollBars = ScrollBars.Vertical; result.BackColor = Palette.Surface; result.ForeColor = Palette.Text; result.BorderStyle = BorderStyle.None; result.MaxLength = 0;
             result.ShortcutsEnabled = true;
             reformulated.Dock = DockStyle.Fill; reformulated.Multiline = true; reformulated.ReadOnly = true; reformulated.ScrollBars = ScrollBars.None; reformulated.BorderStyle = BorderStyle.None; reformulated.MaxLength = 0;
@@ -669,7 +698,7 @@ namespace CorrecteurMail {
             foreach (var tone in new [] {
                 new [] { "Plus ferme", "Reformule avec un ton plus ferme et plus direct, sans devenir agressif ni impoli." },
                 new [] { "Plus doux", "Reformule avec un ton plus doux et plus chaleureux, sans devenir familier." },
-                new [] { "Plus court", "Raccourcis le texte : garde l'essentiel, supprime les répétitions et les formules inutiles." },
+                new [] { "Plus court", "Raccourcis le texte : supprime les répétitions et les formules inutiles, mais conserve toutes les informations, demandes, réserves, engagements, dates et montants. Ne retire aucune condition ni incertitude." },
                 new [] { "Plus formel", "Reformule avec un ton plus formel et plus soutenu, sans lourdeur." } }) {
                 string instruction = tone[1];
                 var toneButton = new SoftButton { Text = tone[0], Dock = DockStyle.Fill, Margin = new Padding(0, 0, 6, 0), Font = new Font("Segoe UI", 9), Enabled = false };
@@ -848,6 +877,7 @@ namespace CorrecteurMail {
             }
         }
         private void UpdateProposalActions() {
+            subject.Enabled = !busy && !paused && !String.IsNullOrWhiteSpace(state.Text);
             var proposal = SelectedProposal;
             bool valid = !busy && !paused && resultVersion == state.Version && proposal != null;
             copy.Enabled = !busy && !paused && ShownProposal != null;
@@ -970,9 +1000,10 @@ namespace CorrecteurMail {
         }
         private void Observe(Draft draft) {
             if (!manualMode) {
-                if (!draftNumbers.ContainsKey(draft.Key)) draftNumbers[draft.Key] = draftNumbers.Count + 1;
-                context.Text = "OUTLOOK · MAIL " + draftNumbers[draft.Key];
-                tips.SetToolTip(context, "Repère du brouillon dans cette session. Seul le mail de la fenêtre active est corrigé.");
+                string mailKey = draft.Key.Split(new [] { ":selection:" }, StringSplitOptions.None)[0];
+                if (!draftNumbers.ContainsKey(mailKey)) draftNumbers[mailKey] = draftNumbers.Count + 1;
+                context.Text = draft.SelectionOnly ? "SÉLECTION" : "OUTLOOK · MAIL " + draftNumbers[mailKey];
+                tips.SetToolTip(context, draft.SelectionOnly ? "Seul le passage sélectionné est affiché, transmis et remplacé. Retirez la sélection dans Outlook pour revenir au brouillon entier." : "Repère du brouillon dans cette session. Seul le mail de la fenêtre active est corrigé.");
             }
             string previousKey = state.Key;
             if (state.Observe(draft.Key, draft.Text, DateTime.UtcNow)) {
@@ -1032,7 +1063,7 @@ namespace CorrecteurMail {
                     bool left = detected;
                     if (detected || state.Key.Length > 0) { runner.Stop(); state.Observe("", "", DateTime.UtcNow); InvalidateResult(); SetOriginal(""); detected = false; }
                     SetExpanded(false);
-                    status.Text = "Ouvrez un brouillon Outlook ou passez en Manuel.";
+                    status.Text = Draft.SelectionRefused ? "Sélection hors du corps du mail · ajustez-la ou retirez-la." : "Ouvrez un brouillon Outlook ou passez en Manuel.";
                     // Draft left, closed or sent: Korecto withdraws to the notification area and
                     // returns with the next draft (Manuel stays in the notification menu).
                     if (left && defaultManual) { SwitchMode(); return false; }
@@ -1104,6 +1135,29 @@ namespace CorrecteurMail {
             paused = !paused; pause.Text = paused ? "▶" : "Ⅱ"; pause.AccessibleName = paused ? "Reprendre" : "Mettre en pause"; tips.SetToolTip(pause, pause.AccessibleName);
             if (paused) { runner.Stop(); state.Version++; InvalidateResult(); retry.Enabled = false; status.Text = "En pause · aucune nouvelle lecture ni transmission."; }
             else { requested = -1; state.Changed = DateTime.UtcNow; retry.Enabled = !busy && !String.IsNullOrWhiteSpace(state.Text); if (manualMode) apply.Enabled = !busy; status.Text = manualMode ? "Texte manuel · cliquez sur Corriger." : "Aperçu repris · cliquez sur Corriger."; }
+        }
+        private void OpenSubject() {
+            if (busy || paused || closing || settingsOpen) return;
+            settingsOpen = true;
+            try { using (var dialog = new SubjectDialog(GenerateSubject)) dialog.ShowDialog(this); }
+            finally { runner.Stop(); settingsOpen = false; UpdateProposalActions(); }
+        }
+        private async Task<string> GenerateSubject() {
+            if (busy || paused || closing) throw new InvalidOperationException("Demande indisponible pour le moment.");
+            using (var draft = CurrentDraft()) {
+                if (draft == null || !SelectionAccess.Valid(draft.Text)) throw new InvalidOperationException("Texte vide ou trop long (30 000 caractères maximum).");
+                string text = draft.Text, key = draft.Key;
+                Observe(draft); long version = state.Version;
+                busy = true; UpdateProposalActions(); retry.Enabled = false;
+                try {
+                    string answer = await runner.Subject(text);
+                    if (closing || paused || state.Version != version) throw new InvalidOperationException("Le texte a changé. Demandez un nouvel objet.");
+                    using (var current = CurrentDraft()) {
+                        if (current == null || current.Key != key || current.Text != text) throw new InvalidOperationException("Le texte a changé. Demandez un nouvel objet.");
+                    }
+                    return SubjectText.Validate(answer, text);
+                } finally { busy = false; if (!closing) { retry.Enabled = CanCorrect; UpdateProposalActions(); } }
+            }
         }
         private Task Request(bool fluent) { return RequestCore(fluent, null); }
         // advice: the answer of the Avis tab, which the reformulation must follow.
@@ -1202,10 +1256,20 @@ namespace CorrecteurMail {
                     InvalidateResult(true, draft != null && draft.Key == keptKey); status.Text = "Le brouillon a changé. Aucune modification appliquée."; return;
                 }
                 try {
-                    // Replace only the captured author range, never subject, recipients or attachments.
+                    // Replace only the captured author range (selection when present), never mail headers.
                     string corrected = proposal.Text.Replace("\r\n", "\r").Replace("\n", "\r");
                     if (draft.Text.EndsWith("\r") && !corrected.EndsWith("\r")) corrected += "\r";
                     int linksKept = ReplaceDraftText(draft, corrected);
+                    if (draft.SelectionOnly) {
+                        // Word may collapse or resize its selection after writing. A proposal for
+                        // a passage must never become applicable to the full body on a second click.
+                        using (var current = readDraft()) { if (current != null) state.Observe(current.Key, current.Text, DateTime.UtcNow); }
+                        InvalidateResult(true);
+                        if (!String.IsNullOrWhiteSpace(state.Text)) ShowDraftPreview(state.Text);
+                        retry.Enabled = CanCorrect; UpdateProposalActions();
+                        status.Text = linksKept > 0 ? "Passage appliqué · liens et mentions conservés. Nouvelle correction nécessaire pour continuer." : "Passage sélectionné appliqué · le reste du mail est conservé.";
+                        return;
+                    }
                     // Undoing an applied reformulation restores a source with no strict correction: still no new request.
                     Remember(draft.Key, draft.Text, null, false);
                     long oldVersion = state.Version;

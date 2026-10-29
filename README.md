@@ -26,6 +26,9 @@ Aucune clé API n'est demandée : Korecto utilise votre abonnement via le client
 
 ## Utilisation
 
+- **Sélection Outlook** : lorsqu'un passage du corps est sélectionné, seul ce passage apparaît et est transmis à l'IA. Appliquer remplace uniquement ce passage. Sans sélection, Korecto affiche le corps du brouillon. Une sélection débordant dans la signature ou l'historique est refusée. Après application d'un passage, une nouvelle correction est nécessaire avant de réappliquer.
+- **Objet** : le bouton Objet propose un titre à partir du texte affiché, sur clic uniquement. Copier l'objet permet de le coller soi-même dans Outlook. Korecto ne modifie pas automatiquement ce champ.
+- **Dictionnaire métier** : dans Paramètres, saisir les termes techniques, sigles et matériaux à préserver, un par ligne, sans noms de clients. Aucun terme n'est collecté automatiquement. Ce lexique est transmis avec le texte au fournisseur IA choisi.
 - **Outlook** : ouvrez un brouillon, Korecto affiche son texte en direct. Cliquez sur **Corriger** quand le mail est terminé, ou sur **Reformuler** pour une autre tournure. Rien n'est transmis à l'IA sans clic.
 - **Trois onglets** : Texte d'origine, Corrigé, Reformulé. **Appliquer** remplace le texte du brouillon (un seul Ctrl+Z dans Outlook l'annule), **Copier** place la proposition dans le presse-papiers.
 - **Mode Manuel** : bouton Manuel, collez votre texte, Corriger, Copier.
@@ -54,7 +57,7 @@ Sources C# (.NET Framework, compilateur fourni avec Windows) dans [`src`](src).
 
 ```powershell
 src\CONSTRUIRE.ps1            # compile src\Korecto.exe
-src\tests\LANCER_TESTS.ps1    # 304 contrôles locaux, sans réseau ni vrai mail
+src\tests\LANCER_TESTS.ps1    # 320 contrôles locaux, sans réseau ni vrai mail
 ```
 
 | Dossier | Contenu |

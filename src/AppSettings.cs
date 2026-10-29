@@ -69,6 +69,7 @@ namespace CorrecteurMail {
         internal readonly Button UpdateNow = new SoftButton();
         internal readonly Button Save = new SoftButton { Primary = true }, AiChoice = new SoftButton();
         internal readonly Button ThemeChoice;
+        internal readonly Button Vocabulary = new SoftButton();
         private readonly Label message = new Label(), aiSummary = new Label();
         private readonly StartupPreference startup;
         private readonly UpdatePreference updatePref;
@@ -79,11 +80,11 @@ namespace CorrecteurMail {
             SuspendLayout();
             startup = startupPreference ?? new StartupPreference();
             AutoScaleDimensions = new SizeF(96, 96); AutoScaleMode = AutoScaleMode.Dpi;
-            Text = "Paramètres · " + AppBrand.Name; ClientSize = new Size(510, 516);
+            Text = "Paramètres · " + AppBrand.Name; ClientSize = new Size(510, 558);
             Font = new Font("Segoe UI", 10); FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = MinimizeBox = false; StartPosition = FormStartPosition.CenterParent;
             AppBrand.SetIcon(this);
-            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(22), ColumnCount = 1, RowCount = 12 };
-            foreach (int height in new [] { 38, 30, 36, 44, 36, 36, 44, 30, 42, 42, 40, 44 }) layout.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
+            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(22), ColumnCount = 1, RowCount = 13 };
+            foreach (int height in new [] { 38, 30, 36, 44, 36, 36, 44, 30, 42, 42, 42, 40, 44 }) layout.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
             layout.Controls.Add(new Label { Text = "Paramètres", Dock = DockStyle.Fill, Font = new Font("Segoe UI Semibold", 16) }, 0, 0);
             layout.Controls.Add(new Label { Text = "Général", Dock = DockStyle.Fill, ForeColor = Palette.Muted }, 0, 1);
             Startup.Text = "Lancer au démarrage de Windows"; Startup.Dock = DockStyle.Fill;
@@ -122,7 +123,10 @@ namespace CorrecteurMail {
             };
             choices.Controls.Add(ThemeChoice); choices.Controls.Add(AiChoice); layout.Controls.Add(choices, 0, 8);
             aiSummary.Text = currentAi().ProviderName + " · " + currentAi().ModelName; aiSummary.Dock = DockStyle.Fill; layout.Controls.Add(aiSummary, 0, 9);
-            message.Dock = DockStyle.Fill; message.ForeColor = Palette.Muted; message.Font = new Font("Segoe UI", 9); layout.Controls.Add(message, 0, 10);
+            Vocabulary.Text = "Dictionnaire métier…"; Vocabulary.Dock = DockStyle.Fill;
+            Vocabulary.Click += (s,e) => { using (var dialog = new VocabularyDialog()) dialog.ShowDialog(this); };
+            layout.Controls.Add(Vocabulary, 0, 10);
+            message.Dock = DockStyle.Fill; message.ForeColor = Palette.Muted; message.Font = new Font("Segoe UI", 9); layout.Controls.Add(message, 0, 11);
             var buttons = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = Padding.Empty };
             buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
             var cancel = new SoftButton { Text = "Annuler", DialogResult = DialogResult.Cancel, Dock = DockStyle.Fill };
@@ -138,7 +142,7 @@ namespace CorrecteurMail {
                 catch (Exception ex) { if (!(ex is IOException || ex is UnauthorizedAccessException)) throw; message.Text = "Choix d’IA non enregistré · vérifiez l’accès au dossier de l’application."; return; }
                 DialogResult = DialogResult.OK;
             };
-            buttons.Controls.Add(cancel); buttons.Controls.Add(Save); layout.Controls.Add(buttons, 0, 11); Controls.Add(layout);
+            buttons.Controls.Add(cancel); buttons.Controls.Add(Save); layout.Controls.Add(buttons, 0, 12); Controls.Add(layout);
             HandleCreated += (s,e) => Palette.ApplyCaption(this);
             AcceptButton = Save; CancelButton = cancel; Palette.Apply(this);
             AutoScaleDimensions = new SizeF(96, 96); ResumeLayout(true);

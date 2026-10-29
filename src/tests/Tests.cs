@@ -16,10 +16,12 @@ namespace CorrecteurMail {
         internal TaskCompletionSource<string> Pending = new TaskCompletionSource<string>();
         internal int Calls, Stops;
         internal bool Fluent;
-        internal string LastAdvice, LastQuestion;
+        internal string LastAdvice, LastQuestion, LastText;
+        internal bool SubjectRequested;
         public string Progress { get { return "Réponse simulée"; } }
-        public Task<string> Correct(string text, bool fluent, string advice = null) { Calls++; Fluent = fluent; LastAdvice = advice; return Pending.Task; }
+        public Task<string> Correct(string text, bool fluent, string advice = null) { Calls++; LastText = text; Fluent = fluent; LastAdvice = advice; return Pending.Task; }
         public Task<string> Advise(string text, string question) { Calls++; LastQuestion = question; return Pending.Task; }
+        public Task<string> Subject(string text) { Calls++; LastText = text; SubjectRequested = true; return Pending.Task; }
         public void Stop() { Stops++; } // Deliberately deliver late answers despite cancellation.
         public void Dispose() { Stop(); }
         internal void Next() { Pending = new TaskCompletionSource<string>(); }
@@ -77,6 +79,7 @@ namespace CorrecteurMail {
         internal string Key = "mail-A", Text = "Bonjour, les document sont prêt.\r";
         internal bool Exists = true, Foreground = true, Menu;
         internal int Reads;
+        internal Func<Draft> DraftFactory;
         internal readonly FakeRange Range = new FakeRange();
         internal float DpiScale { get { using (var graphics = Window.CreateGraphics()) return graphics.DpiX / 96f; } }
         internal Size ClientSize {
@@ -85,7 +88,7 @@ namespace CorrecteurMail {
         }
         // liveRange: text written by Appliquer is read back, like Outlook; Range.Text = null stands for Ctrl+Z.
         internal Rig(bool liveRange = false, ModePreference mode = null) {
-            Window = new Popup(true, Runner, () => { Reads++; return Exists ? new Draft { Key = Key, Text = liveRange && Range.Text != null ? Range.Text : Text, Range = Range } : null; },() => Foreground, appearancePath: Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "TEMP", "THEME", "rig.theme.txt"), popupReader: () => Menu, modePreference: mode);
+            Window = new Popup(true, Runner, () => { Reads++; if (DraftFactory != null) return DraftFactory(); return Exists ? new Draft { Key = Key, Text = liveRange && Range.Text != null ? Range.Text : Text, Range = Range } : null; },() => Foreground, appearancePath: Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "TEMP", "THEME", "rig.theme.txt"), popupReader: () => Menu, modePreference: mode);
             Window.Opacity = 0; Window.ShowInTaskbar = false; Window.Show();
         }
         internal T Get<T>(string name) { return (T)typeof(Popup).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic).GetValue(Window); }
@@ -146,6 +149,7 @@ namespace CorrecteurMail {
                 File.WriteAllText(args[1], "ChatGPT : " + gpt.Connected + " — " + gpt.Message + "\r\nClaude : " + claude.Connected + " — " + claude.Message + "\r\nAucun texte envoyé, aucun jeton d’authentification lu ou enregistré par l’application.", Encoding.UTF8); return;
             }
             Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
+            if (args.Length == 2 && args[0] == "--features-preview") { FeaturePreview(args[1]); return; }
             using (var host = new Form { Opacity = 0, ShowInTaskbar = false }) {
                 host.Load += async (s, e) => {
                     try { await Run(); if (args.Length > 1 && args[1] == "--capture") await Capture(Path.GetDirectoryName(args[0])); if (args.Length > 1 && args[1] == "--compact") { using (var r = new Rig()) { await r.Ready(); r.Window.PerformLayout(); using (var bitmap = new Bitmap(r.Window.Width, r.Window.Height)) { r.Window.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size)); bitmap.Save(Path.Combine(Path.GetDirectoryName(args[0]), "INTERFACE_COMPACTE.png")); } } } }
@@ -159,6 +163,88 @@ namespace CorrecteurMail {
             }
         }
         private static async Task Run() {
+            await Test("Sélection Outlook : bornes limitées au corps, refus d'une signature ou d'un historique sélectionné", () => {
+                int start, end;
+                bool full = Draft.SelectionBounds(0, 30, 5, 5, out start, out end) && start == 0 && end == 30;
+                bool selected = Draft.SelectionBounds(0, 30, 4, 12, out start, out end) && start == 4 && end == 12;
+                return Value(full && selected && !Draft.SelectionBounds(0, 30, 20, 40, out start, out end) && !Draft.SelectionBounds(0, 30, 31, 40, out start, out end));
+            });
+            await Test("Sélection Outlook : seul le passage apparaît et part à l'IA sur clic", async () => { using (var r = new Rig()) {
+                r.Key = "mail-A:selection:10:25"; r.Text = "Les document."; await r.Tick();
+                bool preview = r.Get<TextBox>("manualInput").Text == "Les document." && r.Runner.Calls == 0;
+                await r.Ready("Les documents."); return preview && r.Runner.LastText == "Les document.";
+            } });
+            await Test("Sélection Outlook : Appliquer préserve le texte avant et après le passage", () => {
+                string prefix = "Introduction.\r", chosen = "Les document sont prêt.", suffix = "\rConclusion.\rSIGNATURE";
+                var doc = new FakeWordDocument { Text = prefix + chosen + suffix };
+                using (var draft = new Draft { Document = doc, Range = doc.Range(prefix.Length, prefix.Length + chosen.Length), Text = chosen, SelectionOnly = true }) Popup.ReplaceDraftText(draft, "Les documents sont prêts.");
+                return Value(doc.Text == prefix + "Les documents sont prêts." + suffix && doc.Application.UndoRecord.Starts == 1 && doc.Application.UndoRecord.Ends == 1);
+            });
+            await Test("Sélection Outlook déplacée avec texte identique : aucune application de l'ancienne proposition", async () => { using (var r = new Rig()) {
+                r.Key = "mail-A:selection:10:20"; await r.Ready(); r.Key = "mail-A:selection:40:50"; r.Call("Apply"); return r.Range.Text == null && !r.Valid;
+            } });
+            await Test("Sélection repliée après Appliquer : un second clic ne remplace jamais le mail entier", async () => { using (var r = new Rig()) {
+                string prefix = "Introduction.\r", chosen = "Les document sont prêt.", suffix = "\rConclusion.\r";
+                var doc = new FakeWordDocument { Text = prefix + chosen + suffix };
+                r.DraftFactory = () => doc.Replaced.Count == 0 ? new Draft { Key = "mail-A:selection:14:36", Text = chosen, SelectionOnly = true, Document = doc, Range = doc.Range(prefix.Length, prefix.Length + chosen.Length) } : new Draft { Key = "mail-A", Text = doc.Text, Document = doc, Range = doc.Range(0, doc.Text.Length) };
+                await r.Ready("Les documents sont prêts."); r.Call("Apply"); int writes = doc.Replaced.Count; r.Call("Apply");
+                return doc.Text == prefix + "Les documents sont prêts." + suffix && doc.Replaced.Count == writes && !r.Get<Button>("apply").Enabled;
+            } });
+            await Test("Plus court : préservation explicite des informations et réserves", async () => { using (var r = new Rig()) {
+                await r.Tick(); var tabs = r.Get<TabControl>("textTabs"); tabs.SelectedTab = r.Get<TabPage>("advicePage");
+                r.Get<List<Button>>("toneButtons")[2].PerformClick(); r.Runner.Pending.SetResult(r.Text); await Task.Delay(50);
+                return r.Runner.Fluent && r.Runner.LastAdvice.Contains("toutes les informations") && r.Runner.LastAdvice.Contains("réserves");
+            } });
+            await Test("Objet : génération sur clic, texte source transmis, aucune écriture dans le mail", async () => { using (var r = new Rig()) {
+                await r.Tick(); bool available = r.Get<Button>("subject").Enabled && r.Runner.Calls == 0;
+                var task = (Task<string>)r.Call("GenerateSubject"); r.Runner.Pending.SetResult("Transmission des documents");
+                return await task == "Transmission des documents" && available && r.Runner.SubjectRequested && r.Runner.LastText == r.Text && r.Range.Text == null;
+            } });
+            await Test("Objet : résultat périmé rejeté si le texte change pendant l'attente", async () => { using (var r = new Rig()) {
+                var task = (Task<string>)r.Call("GenerateSubject"); r.Text = "Nouveau texte"; r.Runner.Pending.SetResult("Ancien objet"); return await Error(task, "changé") && r.Range.Text == null;
+            } });
+            await Test("Objet : proposition multiligne, vide ou trop longue refusée", () => {
+                int rejected = 0; foreach (string value in new [] { "", "Objet\r\nCorps", "Objet\u2028Corps", new string('a', 181) }) { try { SubjectText.Validate(value, "Bonjour"); } catch (InvalidOperationException) { rejected++; } }
+                return Value(rejected == 4 && SubjectText.Validate("Documents du 29/10/2026", "Le 29/10/2026, voici les documents.") == "Documents du 29/10/2026");
+            });
+            await Test("Objet : chiffre inventé refusé, omission d'un montant autorisée", () => {
+                bool refused = false; try { SubjectText.Validate("Facture de 2 000 euros", "Facture de 1 000 euros"); } catch (InvalidOperationException) { refused = true; }
+                return Value(refused && SubjectText.Validate("Transmission de facture", "Facture de 1 000 euros") == "Transmission de facture");
+            });
+            await Test("Objet : un tiret devant un nombre du texte ne provoque pas de refus", () => {
+                return Value(SubjectText.Validate("RDV 12 mars", "RDV - 12 mars") == "RDV 12 mars");
+            });
+            await Test("Objet : ouvrir ne lance pas l'IA, copier ne modifie aucun brouillon", async () => {
+                int calls = 0; string copied = null;
+                using (var dialog = new SubjectDialog(() => { calls++; return Task.FromResult("Validation des plans"); }, text => copied = text)) {
+                    dialog.Opacity = 0; dialog.ShowInTaskbar = false; dialog.Show(); bool idle = calls == 0 && !dialog.Copy.Enabled;
+                    dialog.Generate.PerformClick(); await Task.Delay(50); dialog.Copy.PerformClick(); return idle && calls == 1 && copied == "Validation des plans" && dialog.Generate.Height >= 28 * DisplayScale(dialog) && dialog.Generate.Bottom <= dialog.Generate.Parent.ClientSize.Height;
+                }
+            });
+            await Test("Dictionnaire : termes explicites, dédoublonnés et persistants, vide par défaut", () => {
+                string folder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TEMP", "LEXIQUE"); Directory.CreateDirectory(folder);
+                string path = Path.Combine(folder, Guid.NewGuid().ToString() + ".txt"); var store = new VocabularyStore(path);
+                bool empty = store.Load().Length == 0; store.Save("BIM\r\n\r\nCLT\nBIM\n béton bas carbone ");
+                return Value(empty && String.Join("|", store.Load()) == "BIM|CLT|béton bas carbone");
+            });
+            await Test("Dictionnaire : validation avant écrasement, limites de taille et caractères", () => {
+                string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TEMP", "LEXIQUE", "validation.txt"); var store = new VocabularyStore(path); store.Save("BIM"); int refused = 0;
+                foreach (string value in new [] { new string('a', 8001), new string('a', 81), "BIM\0" }) { try { store.Save(value); } catch (InvalidOperationException) { refused++; } }
+                return Value(refused == 3 && store.Load()[0] == "BIM");
+            });
+            await Test("Dictionnaire : Annuler conserve le lexique, Enregistrer applique les termes saisis", () => {
+                string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TEMP", "LEXIQUE", "dialogue.txt"); var store = new VocabularyStore(path); store.Save("BIM");
+                using (var dialog = new VocabularyDialog(store)) { dialog.Terms.Text = "CLT"; }
+                bool cancelled = store.Load()[0] == "BIM";
+                bool fits;
+                using (var dialog = new VocabularyDialog(store)) { dialog.Opacity = 0; dialog.ShowInTaskbar = false; dialog.Show(); fits = dialog.Save.Height >= 28 * DisplayScale(dialog) && dialog.Save.Bottom <= dialog.Save.Parent.ClientSize.Height; dialog.Terms.Text = "CLT"; dialog.Save.PerformClick(); }
+                return Value(cancelled && fits && store.Load()[0] == "CLT");
+            });
+            await Test("IA : mode OBJET et dictionnaire envoyés comme données structurées", async () => {
+                var store = new VocabularyStore(); store.Save("BIM\r\nCLT");
+                try { using (var engine = ProcessRunner()) { string answer = await engine.Subject("FAKE_PAYLOAD"); return answer.Contains("\"mode\":\"OBJET\"") && answer.Contains("\"lexique_metier\":[\"BIM\",\"CLT\"]"); } }
+                finally { store.Save(""); }
+            });
             await Test("Sélection externe : ouverture manuelle sans requête IA ni modification du mail", async () => { using (var r = new Rig()) {
                 r.Window.Hide(); r.Window.ImportSelection("Bonjour\v\vTexte choisi 😊"); await r.Wait();
                 return r.Window.Visible && r.Get<bool>("manualMode") && r.Get<TextBox>("manualInput").Text == "Bonjour\r\n\r\nTexte choisi 😊" && r.Runner.Calls == 0 && r.Range.Text == null && r.Get<Button>("retry").Enabled && r.Get<Button>("reformulate").Enabled;
@@ -997,6 +1083,30 @@ namespace CorrecteurMail {
             }
         }
         private static Func<bool> MakeCountdown(int polls) { int left = polls; return () => --left <= 0; }
+        private static void FeaturePreview(string target) {
+            Palette.Use(false);
+            var captures = new List<Bitmap>();
+            Action<Form> capture = form => { form.PerformLayout(); var bitmap = new Bitmap(form.Width, form.Height); form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size)); captures.Add(bitmap); };
+            using (var r = new Rig()) {
+                r.Text = "Bonjour,\r\n\r\nLes plans BIM et les détails en CLT sont prêts pour validation.\r\n\r\nMerci de votre retour.";
+                r.Call("SwitchMode"); r.Get<TextBox>("manualInput").Text = r.Text;
+                r.Get<TabControl>("textTabs").SelectedTab = r.Get<TabPage>("advicePage"); capture(r.Window);
+            }
+            using (var dialog = new SubjectDialog(() => Task.FromResult("Validation des plans BIM et des détails CLT"))) {
+                dialog.Opacity = 0; dialog.ShowInTaskbar = false; dialog.Show(); dialog.Generate.PerformClick(); capture(dialog); dialog.Close();
+            }
+            string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TEMP", "LEXIQUE", "apercu.txt"); new VocabularyStore(path).Save("BIM\r\nCLT\r\nbéton bas carbone");
+            using (var dialog = new VocabularyDialog(new VocabularyStore(path))) { dialog.Opacity = 0; dialog.ShowInTaskbar = false; dialog.Show(); capture(dialog); dialog.Close(); }
+            using (var dialog = new SettingsDialog(() => AiSettings.Default(), (o,c) => null, new StartupPreference(new FakeStartupStore()))) { dialog.Opacity = 0; dialog.ShowInTaskbar = false; dialog.Show(); capture(dialog); dialog.Close(); }
+            int width = Math.Max(captures[0].Width, captures[2].Width) + Math.Max(captures[1].Width, captures[3].Width) + 36;
+            int topHeight = Math.Max(captures[0].Height, captures[1].Height), height = topHeight + Math.Max(captures[2].Height, captures[3].Height) + 36;
+            using (var result = new Bitmap(width, height)) using (var g = Graphics.FromImage(result)) {
+                g.Clear(Color.FromArgb(225, 229, 232)); int right = Math.Max(captures[0].Width, captures[2].Width) + 24;
+                g.DrawImageUnscaled(captures[0], 12, 12); g.DrawImageUnscaled(captures[1], right, 12); g.DrawImageUnscaled(captures[2], 12, topHeight + 24); g.DrawImageUnscaled(captures[3], right, topHeight + 24);
+                result.Save(target);
+            }
+            foreach (var bitmap in captures) bitmap.Dispose();
+        }
         private static async Task Capture(string directory) {
             bool originalTheme = Palette.IsDark; Palette.Use(true);
             using (var r = new Rig()) {
