@@ -742,7 +742,7 @@ namespace CorrecteurMail {
             Palette.Apply(this);
             timer.Interval = 250; timer.Tick += async (s,e) => await Tick(); if (!testMode) timer.Start();
             if (!testMode && !internalMode) {
-                updateTimer.Interval = 8000;
+                updateTimer.Interval = 100;
                 updateTimer.Tick += async (s,e) => { updateTimer.Stop(); await BackgroundUpdateCheck(); };
                 if (UpdateUi.IsInstalledCopy() && new UpdatePreference().Enabled) { Updater.CleanOldDownloads(); updateTimer.Start(); }
             }
