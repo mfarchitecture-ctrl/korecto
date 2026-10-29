@@ -8,5 +8,5 @@
 ## Liste des corrections en attente
 Ne pas la répéter à chaque message. La donner seulement quand Maxime la demande, ou quand une correction est ajoutée ou que la release se prépare (une ligne par correction : description, commit, résultat des tests Windows).
 
-## Corrections en attente de release (prochaine : 1.0.5)
-Copie indépendante préparée par Codex le 29 octobre : dictionnaire métier sans collecte de noms de clients, proposition d'objet à copier, correction limitée à la sélection Outlook, consigne Plus court renforcée. Relu et corrigé par Claude (tiret dans la validation de l’objet, message de sélection refusée, écriture atomique du dictionnaire, ligne keptKey retirée) ; compilation locale Windows et 320 contrôles locaux ; lecture/application COM dans Outlook réel à valider. Pas de publication. Voir POUR_INTEGRATION.md dans la copie de travail.
+## Corrections en attente de release (prochaine : 1.0.6)
+Aucune pour l'instant (la 1.0.5 a été préparée le 29 octobre 2026 : dictionnaire métier, objet, sélection, Plus court). Lecture/application COM de la sélection à valider dans Outlook réel. Ajouter ici chaque correction après tests Windows, et vider la liste à chaque release.

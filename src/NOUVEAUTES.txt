@@ -1,3 +1,9 @@
+Version 1.0.5
+- Dictionnaire métier dans ⚙ : vos termes techniques, sigles et matériaux (un par ligne, sans noms de clients) sont transmis à l’IA pour être préservés.
+- Bouton Objet : propose un objet à partir du texte affiché, à copier ; l’objet d’Outlook n’est jamais modifié.
+- Sélection : dans Outlook classique, sélectionnez un passage du mail pour ne corriger et remplacer que celui-ci.
+- Plus court conserve désormais toutes les informations, réserves, conditions, dates et montants.
+
 Version 1.0.4
 - Onglet Avis : réponse structurée (synthèse, points, recommandation), indications dans les champs vides, et boutons Plus ferme, Plus doux, Plus court, Plus formel pour reformuler en un clic.
 - Onglet Corrigé : les mots modifiés sont surlignés.
