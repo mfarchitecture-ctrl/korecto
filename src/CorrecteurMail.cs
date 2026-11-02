@@ -570,7 +570,7 @@ namespace CorrecteurMail {
         private long correctionVersion = -1, reformulationVersion = -1, adviceVersion = -1;
         private string manualDraft = "";
         private bool updatingInput;
-        private Size expandedClientSize = new Size(520, 350);
+        private Size expandedClientSize = new Size(480, 300);
         private bool CanCorrect { get { return !busy && !paused && !String.IsNullOrWhiteSpace(state.Text) && correctedVersion != state.Version; } }
         private string resultKey, resultSource;
         // The tabs hold a real proposal (not an error) for this draft, possibly from an earlier text.
@@ -627,7 +627,7 @@ namespace CorrecteurMail {
             DoubleBuffered = true;
             AutoScaleDimensions = new SizeF(96, 96);
             AutoScaleMode = AutoScaleMode.Dpi;
-            ClientSize = new Size(520, 160); MinimumSize = SizeFromClientSize(new Size(480, 160));
+            ClientSize = new Size(480, 160); MinimumSize = SizeFromClientSize(new Size(480, 160));
             StartPosition = FormStartPosition.Manual;
             var area = Screen.PrimaryScreen.WorkingArea; Location = new Point(area.Right - Width - 20, area.Bottom - Height - 20);
             TopMost = true; BackColor = Palette.Background; ForeColor = Palette.Text;
@@ -987,7 +987,7 @@ namespace CorrecteurMail {
             float scale = CurrentAutoScaleDimensions.Height / 96f;
             if (!value) expandedClientSize = ClientSize;
             MinimumSize = SizeFromClientSize(new Size((int)(480 * scale), (int)((value ? 300 : 160) * scale)));
-            if (opening) ClientSize = new Size(ClientSize.Width, Math.Max(ClientSize.Height, Math.Max(expandedClientSize.Height, (int)Math.Round(350 * scale))));
+            if (opening) ClientSize = new Size(ClientSize.Width, Math.Max(ClientSize.Height, Math.Max(expandedClientSize.Height, (int)Math.Round(300 * scale))));
             else ClientSize = new Size(ClientSize.Width, (int)Math.Round(160 * scale));
             var area = Screen.FromControl(this).WorkingArea;
             Top = Math.Max(area.Top, Math.Min(bottom, area.Bottom) - Height);
