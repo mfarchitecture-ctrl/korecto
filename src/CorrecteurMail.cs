@@ -554,6 +554,8 @@ namespace CorrecteurMail {
         // Texts Korecto already handled, per draft: a source and its strict correction, or a text
         // it applied (null). Ctrl+Z / Ctrl+Y in Outlook bring them back without a new request.
         private readonly Dictionary<string, string> handled = new Dictionary<string, string>();
+        // The last 10 proposals of this session, newest first (memory only, never written to disk).
+        private readonly List<string> history = new List<string>();
         private ICorrectionRunner runner;
         private AiSettings settings;
         private readonly Func<Draft> readDraft;
@@ -764,6 +766,21 @@ namespace CorrecteurMail {
             var menu = new ContextMenuStrip(); menu.Items.Add("Afficher", null, (s,e) => RestoreFromTray()); menu.Items.Add("Pause / Reprendre", null, (s,e) => TogglePause()); menu.Items.Add("Quitter", null, (s,e) => ExitApplication());
             menu.Items.Insert(1, new ToolStripMenuItem("Mode manuel", null, (s,e) => { if (!manualMode) SwitchMode(); RestoreFromTray(); }));
             menu.Items.Insert(2, new ToolStripMenuItem("Paramètres…", null, (s,e) => OpenSettings()));
+            var historyMenu = new ToolStripMenuItem("Historique"); menu.Items.Insert(3, historyMenu);
+            historyMenu.DropDownItems.Add("(vide)"); // Keeps the arrow until the first correction.
+            historyMenu.DropDownOpening += (s,e) => {
+                historyMenu.DropDownItems.Clear();
+                if (history.Count == 0) { historyMenu.DropDownItems.Add("(vide)").Enabled = false; return; }
+                foreach (string item in history) {
+                    string value = item, line = Regex.Replace(item.Trim(), @"\s+", " ");
+                    var entry = historyMenu.DropDownItems.Add(line.Length > 60 ? line.Substring(0, 60) + "…" : line);
+                    entry.ToolTipText = "Copier cette proposition";
+                    entry.Click += (s2,e2) => {
+                        try { Clipboard.SetText(value); status.Text = "Proposition de l’historique copiée · collez-la dans votre mail."; }
+                        catch (ExternalException) { status.Text = "Presse-papiers occupé · réessayez."; }
+                    };
+                }
+            };
             notificationIcon = AppBrand.LoadNotificationIcon(16);
             tray.Icon = notificationIcon; tray.Text = AppBrand.Name; tray.ContextMenuStrip = menu; tray.Visible = !testMode; tray.DoubleClick += (s,e) => RestoreFromTray();
             Disposed += (s,e) => notificationIcon.Dispose();
@@ -778,7 +795,7 @@ namespace CorrecteurMail {
             FormClosed += (s,e) => ReleaseResources();
             AutoScaleDimensions = new SizeF(96, 96); ResumeLayout(true);
             Location = new Point(area.Right - Width - 20, area.Bottom - Height - 20);
-            if (!testMode) selectionAccess = new SelectionAccess(ImportSelection, message => { if (!closing) status.Text = message; });
+            if (!testMode) selectionAccess = new SelectionAccess(ImportSelection, message => { if (!closing) status.Text = message; }, RestoreFromTray);
             if (defaultManual) SwitchMode();
             if (internalMode) {
                 SetAvailableUpdate(new ReleaseInfo { Version = new Version(99, 0, 0) });
@@ -1190,6 +1207,7 @@ namespace CorrecteurMail {
                     if (fluent) { reformulated.Text = DisplayText(corrected); reformulationVersion = version; reformulationKept = true; }
                     else { result.Text = DisplayText(corrected); correctionVersion = version; resultKept = true; }
                     keptKey = key;
+                    history.Remove(DisplayText(corrected)); history.Insert(0, DisplayText(corrected)); if (history.Count > 10) history.RemoveAt(10);
                     resultVersion = version; resultKey = key; resultSource = text;
                     if (!fluent) RefreshChanges();
                     // A reformulation that alters numbers must not cancel a valid strict correction.
