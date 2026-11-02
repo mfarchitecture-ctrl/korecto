@@ -49,7 +49,7 @@ namespace CorrecteurMail {
                 uint before=GetClipboardSequenceNumber();
                 keybd_event(0x11,0,0,UIntPtr.Zero); keybd_event(0x43,0,0,UIntPtr.Zero); keybd_event(0x43,0,2,UIntPtr.Zero); keybd_event(0x11,0,2,UIntPtr.Zero);
                 watch.Restart();
-                while(GetClipboardSequenceNumber()==before && watch.ElapsedMilliseconds<1200) await Task.Delay(20);
+                while(GetClipboardSequenceNumber()==before && watch.ElapsedMilliseconds<500) await Task.Delay(20);
                 uint copied=GetClipboardSequenceNumber();
                 if(copied==before) { show(); report("Aucune sélection reçue. Sélectionnez du texte, puis Alt + K."); return; }
                 string text=null;
