@@ -4,6 +4,8 @@ name: Release
 on:
   push:
     tags: ['v*']
+  # Lancement manuel depuis main : l'étiquette vX.Y.Z est créée par la Release.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -20,7 +22,7 @@ jobs:
           $tag = '${{ github.ref_name }}'.TrimStart('v')
           $match = Select-String -Path src/AppSettings.cs -Pattern 'Version = "([^"]+)"'
           $version = $match.Matches[0].Groups[1].Value
-          if ($tag -ne $version) { throw "L'étiquette v$tag ne correspond pas à AppBrand.Version ($version) : Release annulée." }
+          if ('${{ github.event_name }}' -eq 'push' -and $tag -ne $version) { throw "L'étiquette v$tag ne correspond pas à AppBrand.Version ($version) : Release annulée." }
           "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Compiler Korecto.exe
@@ -40,4 +42,4 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ github.ref_name }}" src/Korecto.exe --title "Korecto $env:VERSION" --generate-notes --verify-tag
+          gh release create "v$env:VERSION" src/Korecto.exe --title "Korecto $env:VERSION" --generate-notes --target "${{ github.sha }}"
