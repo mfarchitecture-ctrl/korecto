@@ -761,7 +761,7 @@ namespace CorrecteurMail {
             layout.Controls.Add(noticeRow, 0, 0); layout.Controls.Add(brand, 0, 1); layout.Controls.Add(header, 0, 2); layout.Controls.Add(content, 0, 3); layout.Controls.Add(actions, 0, 4); Controls.Add(layout);
             apply.Enabled = reformulate.Enabled = retry.Enabled = false;
             expand.Enabled = false;
-            apply.Click += (s,e) => { if (manualMode) PasteManual(); else Apply(); }; reformulate.Click += async (s,e) => await Request(true); retry.Click += async (s,e) => await Request(false);
+            apply.Click += (s,e) => { if (!manualMode) Apply(); }; reformulate.Click += async (s,e) => await Request(true); retry.Click += async (s,e) => await Request(false);
             pause.Click += (s,e) => TogglePause();
             var menu = new ContextMenuStrip(); menu.Items.Add("Afficher", null, (s,e) => RestoreFromTray()); menu.Items.Add("Pause / Reprendre", null, (s,e) => TogglePause()); menu.Items.Add("Quitter", null, (s,e) => ExitApplication());
             menu.Items.Insert(1, new ToolStripMenuItem("Mode manuel", null, (s,e) => { if (!manualMode) SwitchMode(); RestoreFromTray(); }));
@@ -919,7 +919,9 @@ namespace CorrecteurMail {
             SetOriginal(manualMode ? manualDraft : "");
             state.Observe(manualMode ? "manuel" : "", manualMode ? manualInput.Text : "", DateTime.UtcNow);
             requested = -1; InvalidateResult();
-            manual.Text = manualMode ? "OUTLOOK" : "Manuel"; apply.Text = manualMode ? "Coller" : "Appliquer";
+            manual.Text = manualMode ? "OUTLOOK" : "Manuel";
+            // No Coller button in manual mode: the text is pasted directly in the box.
+            apply.Visible = !manualMode; ((TableLayoutPanel)apply.Parent).ColumnStyles[1].Width = manualMode ? 0 : 25;
             if (manualMode) {
                 textTabs.SelectedTab = inputPage; SetExpanded(true);
                 apply.Enabled = !busy && !paused; retry.Enabled = CanCorrect;
@@ -943,14 +945,6 @@ namespace CorrecteurMail {
             RestoreFromTray(); Activate(); manualInput.Focus(); manualInput.SelectionStart = 0; manualInput.SelectionLength = 0;
             retry.Enabled = CanCorrect; UpdateProposalActions();
             status.Text = "Sélection reçue · choisissez Corriger ou Reformuler. Alt + K depuis une autre application.";
-        }
-        private void PasteManual() {
-            if (!manualMode || busy || paused) return;
-            textTabs.SelectedTab = inputPage; SetExpanded(true);
-            try {
-                if (Clipboard.ContainsText()) { manualInput.Focus(); manualInput.Paste(); }
-                else status.Text = "Copiez d’abord le texte de votre mail.";
-            } catch (ExternalException) { status.Text = "Presse-papiers occupé · réessayez."; }
         }
         private void CopyResult(Action<string> writer) {
             var shown = ShownProposal;
