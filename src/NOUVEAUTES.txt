@@ -1,3 +1,10 @@
+Version 1.0.6
+- Historique : clic droit sur l’icône Korecto > Historique pour recopier une des 10 dernières propositions (gardées en mémoire seulement, jamais écrites sur le disque).
+- Alt + K sans texte sélectionné ouvre quand même Korecto.
+- La touche Alt de droite fonctionne aussi pour Alt + K.
+- Mode manuel : bouton Coller retiré, collez directement dans la zone de texte.
+- Fenêtre plus compacte par défaut.
+
 Version 1.0.5
 - Dictionnaire métier dans ⚙ : vos termes techniques, sigles et matériaux (un par ligne, sans noms de clients) sont transmis à l’IA pour être préservés.
 - Bouton Objet : propose un objet à partir du texte affiché, à copier ; l’objet d’Outlook n’est jamais modifié.
