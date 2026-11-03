@@ -898,7 +898,8 @@ namespace CorrecteurMail {
             var proposal = SelectedProposal;
             bool valid = !busy && !paused && resultVersion == state.Version && proposal != null;
             copy.Enabled = !busy && !paused && ShownProposal != null;
-            apply.Enabled = manualMode ? !busy && !paused : valid && Integrity.SameNumbers(resultSource ?? "", proposal.Text);
+            // Appliquer stays grey when the mail already contains exactly the proposed text.
+            apply.Enabled = manualMode ? !busy && !paused : valid && Integrity.SameNumbers(resultSource ?? "", proposal.Text) && Lines(proposal.Text) != Lines(resultSource);
             // Reformuler also corrects: it is available as soon as there is text, like Corriger.
             reformulate.Enabled = !busy && !paused && !String.IsNullOrWhiteSpace(state.Text);
             adviceAsk.Enabled = !busy && !paused && !String.IsNullOrWhiteSpace(state.Text);
@@ -1260,6 +1261,7 @@ namespace CorrecteurMail {
                 } finally { busy = false; if (!closing) { retry.Enabled = CanCorrect; UpdateProposalActions(); } }
             }
         }
+        private static string Lines(string text) { return (text ?? "").Replace("\r\n", "\n").Replace("\r", "\n").TrimEnd('\n'); }
         private void Apply() {
             var proposal = SelectedProposal;
             if (busy || paused || resultVersion != state.Version || proposal == null || !Integrity.SameNumbers(resultSource ?? "", proposal.Text)) return;
