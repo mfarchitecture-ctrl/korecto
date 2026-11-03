@@ -8,5 +8,5 @@
 ## Liste des corrections en attente
 Ne pas la répéter à chaque message. La donner seulement quand Maxime la demande, ou quand une correction est ajoutée ou que la release se prépare (une ligne par correction : description, commit, résultat des tests Windows).
 
-## Corrections en attente de release (prochaine : 1.0.7)
-Aucune pour l'instant (la 1.0.6 a été publiée le 2 novembre 2026 : historique, Alt + K sans sélection, Alt droite, Coller retiré, fenêtre compacte). Ajouter ici chaque correction après tests Windows, et vider la liste à chaque release.
+## Corrections en attente de release (prochaine : 1.0.8)
+Aucune pour l'instant (la 1.0.7 a été publiée le 3 novembre 2026 : choisir Claude lance l'installation et la connexion de Claude Code ; installation réelle à valider sur un PC). Ajouter ici chaque correction après tests Windows, et vider la liste à chaque release.

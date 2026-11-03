@@ -1,3 +1,6 @@
+Version 1.0.7
+- Claude : si Claude Code n’est pas installé ou pas connecté, cliquer sur Claude dans le choix de l’IA lance son installation et la connexion à votre compte.
+
 Version 1.0.6
 - Historique : clic droit sur l’icône Korecto > Historique pour recopier une des 10 dernières propositions (gardées en mémoire seulement, jamais écrites sur le disque).
 - Alt + K sans texte sélectionné ouvre quand même Korecto.

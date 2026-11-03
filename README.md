@@ -57,7 +57,7 @@ Sources C# (.NET Framework, compilateur fourni avec Windows) dans [`src`](src).
 
 ```powershell
 src\CONSTRUIRE.ps1            # compile src\Korecto.exe
-src\tests\LANCER_TESTS.ps1    # 320 contrôles locaux, sans réseau ni vrai mail
+src\tests\LANCER_TESTS.ps1    # 322 contrôles locaux, sans réseau ni vrai mail
 ```
 
 | Dossier | Contenu |
