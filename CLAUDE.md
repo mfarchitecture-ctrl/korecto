@@ -13,3 +13,7 @@ La 1.0.8 a été publiée le 3 novembre 2026 (fenêtre d'installation de Claude 
 - Appliquer grisé quand le mail contient déjà exactement la proposition — 8f00f20 + de436ce — tests Windows 323/323 réussis.
 
 Ajouter ici chaque correction après tests Windows, et vider la liste à chaque release.
+
+## À faire plus tard
+- Passe graphique sur toute l'interface : relire chaque écran, revoir boutons et textes pour les rendre cohérents (dont « Ai-je répondu à tout ? », serré dans la fenêtre compacte).
+- Affiner « Ai-je répondu à tout ? » après essai réel dans Outlook.
