@@ -218,7 +218,8 @@ namespace CorrecteurMail {
         internal readonly ComboBox Models = new ComboBox();
         internal readonly Button Accept = new SoftButton { Primary = true }, RefreshButton = new SoftButton();
         internal readonly Button ThemeChoice;
-        internal readonly LinkLabel SetupClaude = new LinkLabel { Text = "Installer / connecter", Dock = DockStyle.Fill, Visible = false };
+        internal Func<Task> SetupClaude = LocalAi.SetupClaude;
+        private bool claudeConnected;
         private readonly Label chatStatus = new Label(), claudeStatus = new Label(), modelHelp = new Label();
         private readonly string settingsPath;
         private readonly AiSettings initial;
@@ -249,16 +250,7 @@ namespace CorrecteurMail {
             Chatgpt.Dock = Claude.Dock = DockStyle.Fill; Chatgpt.Enabled = Claude.Enabled = false;
             chatStatus.Text = claudeStatus.Text = "Vérification de la connexion…";
             foreach (var label in new [] { chatStatus, claudeStatus, modelHelp }) { label.Dock = DockStyle.Fill; label.ForeColor = Palette.Muted; label.Font = new Font("Segoe UI", 9); }
-            panel.Controls.Add(Chatgpt, 0, 2); panel.Controls.Add(chatStatus, 0, 3); panel.Controls.Add(Claude, 0, 4);
-            var claudeRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = Padding.Empty };
-            claudeRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); claudeRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
-            claudeRow.Controls.Add(claudeStatus, 0, 0); claudeRow.Controls.Add(SetupClaude, 1, 0); panel.Controls.Add(claudeRow, 0, 5);
-            SetupClaude.Font = new Font("Segoe UI", 9); SetupClaude.TextAlign = ContentAlignment.TopRight;
-            SetupClaude.LinkClicked += async (s,e) => {
-                SetupClaude.Enabled = false; claudeStatus.Text = "Installation et connexion en cours dans la fenêtre PowerShell…";
-                try { await LocalAi.SetupClaude(); } catch (System.ComponentModel.Win32Exception) { }
-                if (!IsDisposed) { SetupClaude.Enabled = true; await RefreshConnections(); }
-            };
+            panel.Controls.Add(Chatgpt, 0, 2); panel.Controls.Add(chatStatus, 0, 3); panel.Controls.Add(Claude, 0, 4); panel.Controls.Add(claudeStatus, 0, 5);
             panel.Controls.Add(new Label { Text = "Modèle", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 6);
             Models.Dock = DockStyle.Fill; Models.DropDownStyle = ComboBoxStyle.DropDownList; Models.BackColor = Palette.Surface; Models.ForeColor = Palette.Text; Models.FlatStyle = FlatStyle.Flat;
             Models.DrawMode = DrawMode.OwnerDrawFixed; Models.ItemHeight = 22;
@@ -276,7 +268,15 @@ namespace CorrecteurMail {
             buttons.Controls.Add(RefreshButton); buttons.Controls.Add(cancel); buttons.Controls.Add(Accept); panel.Controls.Add(buttons, 0, 10); Controls.Add(panel);
             CancelButton = cancel; AcceptButton = Accept;
             Chatgpt.CheckedChanged += (s,e) => { if (Chatgpt.Checked) PopulateModels("chatgpt"); };
-            Claude.CheckedChanged += (s,e) => { if (Claude.Checked) PopulateModels("claude"); };
+            Claude.CheckedChanged += async (s,e) => {
+                if (!Claude.Checked) return;
+                if (claudeConnected) { PopulateModels("claude"); return; }
+                // Claude Code missing or not logged in: choosing Claude launches its installation and login.
+                Claude.Checked = false; if (Chatgpt.Enabled) Chatgpt.Checked = true;
+                Claude.Enabled = false; claudeStatus.Text = "Installation et connexion en cours dans la fenêtre PowerShell…";
+                try { await SetupClaude(); } catch (System.ComponentModel.Win32Exception) { }
+                if (!IsDisposed) await RefreshConnections();
+            };
             Models.SelectedIndexChanged += (s,e) => { Accept.Enabled = !checking && Models.SelectedIndex >= 0 && (Chatgpt.Checked && Chatgpt.Enabled || Claude.Checked && Claude.Enabled); };
             RefreshButton.Click += async (s,e) => await RefreshConnections();
             Accept.Click += (s,e) => {
@@ -300,9 +300,9 @@ namespace CorrecteurMail {
             bool gpt = false, claude = false;
             foreach (var value in values) {
                 if (value.Provider == "chatgpt") { gpt = value.Connected; chatStatus.Text = value.Message; }
-                if (value.Provider == "claude") { claude = value.Connected; claudeStatus.Text = value.Message; }
+                if (value.Provider == "claude") { claude = value.Connected; claudeStatus.Text = value.Message + (claude ? "" : " Cliquez sur Claude pour l’installer et le connecter."); }
             }
-            Chatgpt.Enabled = gpt; Claude.Enabled = claude; SetupClaude.Visible = !claude;
+            Chatgpt.Enabled = gpt; Claude.Enabled = true; claudeConnected = claude;
             if (Chatgpt.Checked && !gpt) Chatgpt.Checked = false;
             if (Claude.Checked && !claude) Claude.Checked = false;
             if (!Chatgpt.Checked && !Claude.Checked) {

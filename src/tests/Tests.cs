@@ -852,7 +852,6 @@ namespace CorrecteurMail {
             var both = new [] { new AiConnection { Provider = "chatgpt", Connected = true, Message = "Compte connecté" }, new AiConnection { Provider = "claude", Connected = true, Message = "Compte connecté" } };
             using (var dialog = new AiSettingsDialog(null, config, autoCheck: false)) {
                 dialog.SetConnections(both); dialog.Claude.Checked = true; dialog.Models.SelectedIndex = 0;
-                Check("Claude connecté : pas de lien d'installation", !dialog.SetupClaude.Visible);
                 Check("Premier écran permet de choisir Claude/Haiku", dialog.SaveSelection() && AiSettingsStore.Load(config).Model == "haiku");
             }
             using (var dialog = new AiSettingsDialog(new AiSettings { Provider = "chatgpt", Model = "gpt-6.1-sol" }, config, autoCheck: false)) {
@@ -861,13 +860,15 @@ namespace CorrecteurMail {
                 dialog.Claude.Checked = true; dialog.Models.SelectedIndex = 1;
                 Check("Changement d'IA et de modèle enregistrable", dialog.SaveSelection() && dialog.Selected.Provider == "claude" && dialog.Selected.Model == "sonnet");
                 dialog.SetConnections(new [] { new AiConnection { Provider = "chatgpt", Connected = false }, new AiConnection { Provider = "claude", Connected = false } });
-                Check("Aucune IA connectée : enregistrement bloqué", !dialog.Accept.Enabled && !dialog.SaveSelection() && !dialog.Chatgpt.Enabled && !dialog.Claude.Enabled);
+                Check("Aucune IA connectée : enregistrement bloqué", !dialog.Accept.Enabled && !dialog.SaveSelection() && !dialog.Chatgpt.Enabled && !dialog.Claude.Checked);
             }
-            using (var dialog = new AiSettingsDialog(null, config, autoCheck: false)) {
-                dialog.SetConnections(new [] { both[0], new AiConnection { Provider = "claude", Connected = false } });
-                Check("Claude non connecté ne peut pas être choisi", !dialog.Claude.Enabled && dialog.Chatgpt.Enabled);
+            var claudeMissing = new [] { both[0], new AiConnection { Provider = "claude", Connected = false } };
+            using (var dialog = new AiSettingsDialog(null, config, () => Task.FromResult(claudeMissing), autoCheck: false)) {
+                dialog.SetConnections(claudeMissing);
+                int setups = 0; dialog.SetupClaude = () => { setups++; return Task.FromResult(0); };
+                dialog.Claude.Checked = true;
+                Check("Claude non connecté : le choisir lance l'installation sans le sélectionner", setups == 1 && !dialog.Claude.Checked && dialog.Chatgpt.Checked);
                 dialog.Opacity = 0; dialog.ShowInTaskbar = false; dialog.Show(); dialog.PerformLayout();
-                Check("Claude non connecté : lien d'installation proposé", dialog.SetupClaude.Visible);
                 Check("Modèle et validation lisibles dans une fenêtre compacte", dialog.Models.SelectedIndex == 0 && dialog.Models.DrawMode == DrawMode.OwnerDrawFixed && dialog.Accept.Height >= 30 * DisplayScale(dialog) && dialog.Accept.Height <= 55 * DisplayScale(dialog) && dialog.Accept.Bottom <= dialog.Accept.Parent.ClientSize.Height);
             }
             using (var dialog = new AiSettingsDialog(new AiSettings { Provider = "chatgpt", Model = "gpt-6.1-sol" }, config, autoCheck: false)) {
