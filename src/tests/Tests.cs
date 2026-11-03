@@ -847,8 +847,8 @@ namespace CorrecteurMail {
             Check("Aucune clé API ni token alternatif transmis", !start.EnvironmentVariables.ContainsKey("OPENAI_API_KEY") && !start.EnvironmentVariables.ContainsKey("ANTHROPIC_API_KEY") && !start.EnvironmentVariables.ContainsKey("CLAUDE_CODE_OAUTH_TOKEN") && !start.EnvironmentVariables.ContainsKey("ANTHROPIC_BASE_URL"));
             Check("Sonde réelle de processus Codex simulé", LocalAi.Check("chatgpt", command, directory).Connected);
             Check("Sonde réelle de processus Claude simulé", LocalAi.Check("claude", command, directory).Connected);
-            Check("Claude Code absent : installateur officiel puis connexion", LocalAi.ClaudeSetupScript(null).StartsWith("irm https://claude.ai/install.ps1 | iex;") && LocalAi.ClaudeSetupScript(null).Contains("claude.exe\" auth login"));
-            Check("Claude Code présent : connexion seule", LocalAi.ClaudeSetupScript(new LocalCommand { FileName = @"C:\O'Brien\claude.exe" }).StartsWith("& 'C:\\O''Brien\\claude.exe' auth login") && !LocalAi.ClaudeSetupScript(new LocalCommand { FileName = "x" }).Contains("install"));
+            Check("Claude Code absent : installateur officiel puis connexion", LocalAi.ClaudeSetupScript(null).Contains("Patientez...'; irm https://claude.ai/install.ps1 | iex;") && LocalAi.ClaudeSetupScript(null).Contains("claude.exe\" auth login"));
+            Check("Claude Code présent : connexion seule", LocalAi.ClaudeSetupScript(new LocalCommand { FileName = @"C:\O'Brien\claude.exe" }).Contains("navigateur, connectez-vous avec votre compte Claude.'; & 'C:\\O''Brien\\claude.exe' auth login") && !LocalAi.ClaudeSetupScript(new LocalCommand { FileName = "x" }).Contains("install"));
             var both = new [] { new AiConnection { Provider = "chatgpt", Connected = true, Message = "Compte connecté" }, new AiConnection { Provider = "claude", Connected = true, Message = "Compte connecté" } };
             using (var dialog = new AiSettingsDialog(null, config, autoCheck: false)) {
                 dialog.SetConnections(both); dialog.Claude.Checked = true; dialog.Models.SelectedIndex = 0;

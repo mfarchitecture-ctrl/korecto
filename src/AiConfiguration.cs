@@ -199,10 +199,10 @@ namespace CorrecteurMail {
         }
         // Installs Claude Code with the official installer if missing, then opens the account login.
         internal static string ClaudeSetupScript(LocalCommand found) {
-            string login = found == null
-                ? "irm https://claude.ai/install.ps1 | iex; & \"$env:USERPROFILE\\.local\\bin\\claude.exe\" auth login"
-                : "& '" + found.FileName.Replace("'", "''") + "' " + found.Prefix + "auth login";
-            return login + "; Read-Host 'Terminé. Appuyez sur Entrée pour revenir à Korecto'";
+            string install = "Write-Host 'Installation de Claude Code : téléchargement en cours, 1 à 3 minutes sans affichage. Patientez...'; irm https://claude.ai/install.ps1 | iex; ";
+            string login = "Write-Host 'Connexion : une page va s''ouvrir dans le navigateur, connectez-vous avec votre compte Claude.'; "
+                + (found == null ? "& \"$env:USERPROFILE\\.local\\bin\\claude.exe\" auth login" : "& '" + found.FileName.Replace("'", "''") + "' " + found.Prefix + "auth login");
+            return (found == null ? install : "") + login + "; Read-Host 'Terminé. Appuyez sur Entrée pour revenir à Korecto'";
         }
         internal static Task SetupClaude() {
             string script = Convert.ToBase64String(Encoding.Unicode.GetBytes(ClaudeSetupScript(Find("claude"))));
