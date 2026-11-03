@@ -1,3 +1,6 @@
+Version 1.0.8
+- Installation de Claude Code : la fenêtre explique ce qui se passe (téléchargement jusqu’à 10 minutes, puis connexion dans le navigateur) et se ferme seule une fois connecté.
+
 Version 1.0.7
 - Claude : si Claude Code n’est pas installé ou pas connecté, cliquer sur Claude dans le choix de l’IA lance son installation et la connexion à votre compte.
 
