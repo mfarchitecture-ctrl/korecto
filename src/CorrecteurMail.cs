@@ -270,7 +270,7 @@ namespace CorrecteurMail {
         public Task<string> Correct(string text, bool fluent, string advice = null) { return Ask(fluent ? "REFORMULER" : "STRICT", text, null, advice); }
         public Task<string> Advise(string text, string question, string received = null) { return Ask("AVIS", text, question, null, received); }
         public Task<string> Subject(string text) { return Ask("OBJET", text, null, null); }
-        private Task<string> Ask(string mode, string text, string question, string advice, string received = null) {
+        private Task<string> Ask(string mode, string text, string question, string advice, string replyTo = null) {
             int ticket;
             lock (gate) { if (disposed) throw new ObjectDisposedException("AccountRunner"); ticket = cancellation; Progress = "Connexion à " + settings.ProviderName + "…"; }
             return Task.Run(() => {
@@ -292,7 +292,7 @@ namespace CorrecteurMail {
                 if (vocabulary.Length > 0) data["lexique_metier"] = vocabulary;
                 if (question != null) data["question"] = question;
                 if (advice != null) data["avis"] = advice;
-                if (received != null) data["mail_recu"] = received;
+                if (replyTo != null) data["mail_recu"] = replyTo;
                 string payload = rules + "\n\nDonnées utilisateur :\n" + json.Serialize(data);
                 // No body on command line, no API key, no persisted chat, no user MCP servers.
                 var info = command.StartInfo(ArgumentsFor(settings, root), root);
