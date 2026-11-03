@@ -9,4 +9,7 @@
 Ne pas la répéter à chaque message. La donner seulement quand Maxime la demande, ou quand une correction est ajoutée ou que la release se prépare (une ligne par correction : description, commit, résultat des tests Windows).
 
 ## Corrections en attente de release (prochaine : 1.0.9)
-Aucune pour l'instant (la 1.0.8 a été publiée le 3 novembre 2026 : fenêtre d'installation de Claude Code qui explique les étapes et se ferme seule). Ajouter ici chaque correction après tests Windows, et vider la liste à chaque release.
+La 1.0.8 a été publiée le 3 novembre 2026 (fenêtre d'installation de Claude Code qui explique les étapes et se ferme seule).
+- Appliquer grisé quand le mail contient déjà exactement la proposition — 8f00f20 + de436ce — tests Windows 323/323 réussis.
+
+Ajouter ici chaque correction après tests Windows, et vider la liste à chaque release.
