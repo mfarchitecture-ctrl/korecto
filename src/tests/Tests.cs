@@ -581,21 +581,21 @@ namespace CorrecteurMail {
             });
             await Test("Avis : champ de question vide au départ, avis général demandé si on ne tape rien", async () => { using (var r = new Rig()) {
                 await r.Tick(); bool empty = r.Get<TextBox>("adviceQuestion").Text.Length == 0 && r.Get<HintTextBox>("adviceQuestion").Hint.Contains("question") && r.Get<HintTextBox>("adviceBox").Hint.Contains("Posez une question") && r.Get<HintTextBox>("adviceBox").HintFont.Size < r.Get<TextBox>("adviceBox").Font.Size;
-                var task = (Task)r.Call("RequestAdvice"); r.Runner.Pending.SetResult("Plutôt clair."); await task;
+                var task = (Task)r.Call("RequestAdvice", false); r.Runner.Pending.SetResult("Plutôt clair."); await task;
                 return empty && r.Runner.LastQuestion == "Donne ton avis sur ce mail.";
             } });
             await Test("Demander l'avis : question transmise, réponse affichée, mail intact", async () => { using (var r = new Rig()) {
                 await r.Tick(); r.Get<TextBox>("adviceQuestion").Text = "Mon mail est-il trop agressif ?";
-                var task = (Task)r.Call("RequestAdvice"); r.Runner.Pending.SetResult("Oui, trop sec : adoucir l'ouverture."); await task;
+                var task = (Task)r.Call("RequestAdvice", false); r.Runner.Pending.SetResult("Oui, trop sec : adoucir l'ouverture."); await task;
                 return r.Runner.Calls == 1 && r.Runner.LastQuestion == "Mon mail est-il trop agressif ?" && r.Get<TextBox>("adviceBox").Text == "Oui, trop sec : adoucir l'ouverture." && r.Range.Text == null && r.Get<Button>("adviceReformulate").Enabled && r.Get<Label>("status").Text.StartsWith("Avis reçu");
             } });
             await Test("Reformuler selon l'avis : avis transmis, reformulation dans l'onglet Reformulé", async () => { using (var r = new Rig()) {
-                await r.Tick(); var advice = (Task)r.Call("RequestAdvice"); r.Runner.Pending.SetResult("Plus ferme et plus court."); await advice;
+                await r.Tick(); var advice = (Task)r.Call("RequestAdvice", false); r.Runner.Pending.SetResult("Plus ferme et plus court."); await advice;
                 r.Get<TabControl>("textTabs").SelectedTab = r.Get<TabPage>("advicePage"); r.Runner.Next(); r.Get<Button>("adviceReformulate").PerformClick(); r.Runner.Pending.SetResult("Bonjour, voici les documents. Merci de confirmer."); await Task.Delay(100);
                 return r.Runner.Fluent && r.Runner.LastAdvice == "Plus ferme et plus court." && r.Get<TabControl>("textTabs").SelectedTab == r.Get<TabPage>("reformulationPage") && r.Get<TextBox>("reformulated").Text.StartsWith("Bonjour, voici") && r.Range.Text == null;
             } });
             await Test("Avis périmé après modification du mail : Reformuler selon l'avis grisé", async () => { using (var r = new Rig()) {
-                await r.Tick(); var advice = (Task)r.Call("RequestAdvice"); r.Runner.Pending.SetResult("Plus court."); await advice;
+                await r.Tick(); var advice = (Task)r.Call("RequestAdvice", false); r.Runner.Pending.SetResult("Plus court."); await advice;
                 r.Text += "Merci"; r.Observe();
                 return !r.Get<Button>("adviceReformulate").Enabled;
             } });
