@@ -16,11 +16,11 @@ namespace CorrecteurMail {
         internal TaskCompletionSource<string> Pending = new TaskCompletionSource<string>();
         internal int Calls, Stops;
         internal bool Fluent;
-        internal string LastAdvice, LastQuestion, LastText;
+        internal string LastAdvice, LastQuestion, LastText, LastReceived;
         internal bool SubjectRequested;
         public string Progress { get { return "Réponse simulée"; } }
         public Task<string> Correct(string text, bool fluent, string advice = null) { Calls++; LastText = text; Fluent = fluent; LastAdvice = advice; return Pending.Task; }
-        public Task<string> Advise(string text, string question) { Calls++; LastQuestion = question; return Pending.Task; }
+        public Task<string> Advise(string text, string question, string received = null) { Calls++; LastQuestion = question; LastReceived = received; return Pending.Task; }
         public Task<string> Subject(string text) { Calls++; LastText = text; SubjectRequested = true; return Pending.Task; }
         public void Stop() { Stops++; } // Deliberately deliver late answers despite cancellation.
         public void Dispose() { Stop(); }
@@ -599,6 +599,12 @@ namespace CorrecteurMail {
                 r.Text += "Merci"; r.Observe();
                 return !r.Get<Button>("adviceReformulate").Enabled;
             } });
+            await Test("Ai-je répondu à tout : mail reçu transmis avec le brouillon, refusé sans mail reçu", async () => { using (var r = new Rig()) {
+                await r.Tick(); r.Call("RequestAdvice", true); bool refused = r.Runner.Calls == 0 && r.Get<Label>("status").Text.Contains("Aucun mail reçu");
+                r.DraftFactory = () => new Draft { Key = r.Key, Text = r.Text, Range = r.Range, Received = "Pouvez-vous livrer lundi ?" };
+                var task = (Task)r.Call("RequestAdvice", true); r.Runner.Pending.SetResult("Livraison de lundi sans réponse."); await task;
+                return refused && r.Runner.LastReceived == "Pouvez-vous livrer lundi ?" && r.Get<TextBox>("adviceBox").Text.Contains("lundi") && r.Get<Button>("adviceReply").Enabled;
+            } });
             await Test("Progression : le texte annonce la reformulation ou l'avis, pas une correction", async () => { using (var engine = ProcessRunner()) {
                 await engine.Correct("FAKE_NORMAL", true); string reformulation = engine.Progress;
                 await engine.Advise("FAKE_NORMAL", "Question"); string advice = engine.Progress;
@@ -607,7 +613,8 @@ namespace CorrecteurMail {
             } });
             await Test("Moteur réel de processus : Avis et reformulation selon l'avis transmis à l'IA", async () => { using (var engine = ProcessRunner()) {
                 string advice = await engine.Advise("FAKE_PAYLOAD", "Trop gentil ?"); string follow = await engine.Correct("FAKE_PAYLOAD", true, "Plus ferme"); string strict = await engine.Correct("FAKE_PAYLOAD", false);
-                return advice.Contains("\"mode\":\"AVIS\"") && advice.Contains("\"question\":\"Trop gentil ?\"") && follow.Contains("\"mode\":\"REFORMULER\"") && follow.Contains("\"avis\":\"Plus ferme\"") && strict.Contains("\"mode\":\"STRICT\"") && !strict.Contains("\"avis\"");
+                string reply = await engine.Advise("FAKE_PAYLOAD", "Tout ?", "Pouvez-vous livrer lundi ?");
+                return reply.Contains("\"mail_recu\":\"Pouvez-vous livrer lundi ?\"") && !advice.Contains("mail_recu") && advice.Contains("\"mode\":\"AVIS\"") && advice.Contains("\"question\":\"Trop gentil ?\"") && follow.Contains("\"mode\":\"REFORMULER\"") && follow.Contains("\"avis\":\"Plus ferme\"") && strict.Contains("\"mode\":\"STRICT\"") && !strict.Contains("\"avis\"");
             } });
             await Test("Mode par défaut Outlook : après Manuel, retour automatique en revenant dans Outlook avec un brouillon", async () => { using (var r = new Rig()) {
                 r.Call("SwitchMode"); await r.Tick(); bool stays = r.Get<bool>("manualMode"); // Outlook has been in front since the switch (Alt + K from the draft): no immediate return

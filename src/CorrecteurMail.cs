@@ -90,6 +90,7 @@ namespace CorrecteurMail {
         private static bool lastInline;
         internal object Inspector, Item, Document, Range;
         internal string Key, Text;
+        internal string Received; // Start of the quoted mail this draft replies to, null for a new mail.
         internal bool SelectionOnly;
         // Restrict to the author range, excluding signature and quoted history. Never silently
         // expand an invalid/non-author selection into the full message.
@@ -136,6 +137,7 @@ namespace CorrecteurMail {
                 if (doc == null) return null;
                 range = ((dynamic)doc).Content;
                 bookmarks = ((dynamic)doc).Bookmarks;
+                int contentEnd = (int)((dynamic)range).End; string received = null;
                 // Leave signature and quoted history untouched when Outlook marks them.
                 foreach (string name in new [] { "_MailAutoSig", "_MailOriginal" }) {
                     object bookmark = null, markedRange = null;
@@ -144,6 +146,11 @@ namespace CorrecteurMail {
                             bookmark = ((dynamic)bookmarks).Item(name);
                             markedRange = ((dynamic)bookmark).Range;
                             int start = (int)((dynamic)markedRange).Start;
+                            if (name == "_MailOriginal") {
+                                object quoted = null;
+                                try { quoted = ((dynamic)doc).Range(start, contentEnd); received = Convert.ToString(((dynamic)quoted).Text); } finally { Native.Release(quoted); }
+                                if (received != null && received.Length > 3000) received = received.Substring(0, 3000);
+                            }
                             if (start >= (int)((dynamic)range).Start && start < (int)((dynamic)range).End) ((dynamic)range).End = start;
                         }
                     } finally { Native.Release(markedRange); Native.Release(bookmark); }
@@ -160,7 +167,7 @@ namespace CorrecteurMail {
                     if (selectionOnly) { ((dynamic)range).SetRange(from, to); identity += ":selection:" + from + ":" + to; }
                 } finally { Native.Release(selected); Native.Release(selection); Native.Release(window); Native.Release(windows); }
                 var result = new Draft { Inspector = inspector, Item = item, Document = doc, Range = range,
-                    Key = identity, SelectionOnly = selectionOnly, Text = Convert.ToString(((dynamic)range).Text) ?? "" };
+                    Key = identity, SelectionOnly = selectionOnly, Text = Convert.ToString(((dynamic)range).Text) ?? "", Received = String.IsNullOrWhiteSpace(received) ? null : received };
                 lastInline = inline;
                 inspector = item = doc = range = null;
                 return result;
@@ -178,7 +185,7 @@ namespace CorrecteurMail {
     internal interface ICorrectionRunner : IDisposable {
         string Progress { get; }
         Task<string> Correct(string text, bool fluent, string advice = null);
-        Task<string> Advise(string text, string question);
+        Task<string> Advise(string text, string question, string received = null);
         Task<string> Subject(string text);
         void Stop();
     }
@@ -261,9 +268,9 @@ namespace CorrecteurMail {
             return previous;
         }
         public Task<string> Correct(string text, bool fluent, string advice = null) { return Ask(fluent ? "REFORMULER" : "STRICT", text, null, advice); }
-        public Task<string> Advise(string text, string question) { return Ask("AVIS", text, question, null); }
+        public Task<string> Advise(string text, string question, string received = null) { return Ask("AVIS", text, question, null, received); }
         public Task<string> Subject(string text) { return Ask("OBJET", text, null, null); }
-        private Task<string> Ask(string mode, string text, string question, string advice) {
+        private Task<string> Ask(string mode, string text, string question, string advice, string received = null) {
             int ticket;
             lock (gate) { if (disposed) throw new ObjectDisposedException("AccountRunner"); ticket = cancellation; Progress = "Connexion à " + settings.ProviderName + "…"; }
             return Task.Run(() => {
@@ -285,6 +292,7 @@ namespace CorrecteurMail {
                 if (vocabulary.Length > 0) data["lexique_metier"] = vocabulary;
                 if (question != null) data["question"] = question;
                 if (advice != null) data["avis"] = advice;
+                if (received != null) data["mail_recu"] = received;
                 string payload = rules + "\n\nDonnées utilisateur :\n" + json.Serialize(data);
                 // No body on command line, no API key, no persisted chat, no user MCP servers.
                 var info = command.StartInfo(ArgumentsFor(settings, root), root);
@@ -531,7 +539,7 @@ namespace CorrecteurMail {
         private readonly Button theme;
         private readonly TextBox result = new TextBox(), reformulated = new TextBox();
         private readonly HintTextBox adviceQuestion = new HintTextBox(), adviceBox = new HintTextBox();
-        private readonly Button adviceAsk = new SoftButton(), adviceReformulate = new SoftButton();
+        private readonly Button adviceAsk = new SoftButton(), adviceReformulate = new SoftButton(), adviceReply = new SoftButton();
         private readonly List<Button> toneButtons = new List<Button>();
         private readonly RichTextBox resultView = new RichTextBox();
         private readonly TextBox manualInput = new TextBox();
@@ -695,6 +703,9 @@ namespace CorrecteurMail {
             adviceBox.Dock = DockStyle.Fill; adviceBox.Multiline = true; adviceBox.ReadOnly = true; adviceBox.ScrollBars = ScrollBars.None; adviceBox.BorderStyle = BorderStyle.None; adviceBox.MaxLength = 0; adviceBox.Font = new Font("Segoe UI", 11); adviceBox.Margin = new Padding(0, 8, 0, 8);
             adviceReformulate.Text = "Reformuler selon cet avis"; adviceReformulate.Dock = DockStyle.Fill; adviceReformulate.Margin = Padding.Empty; adviceReformulate.Enabled = false;
             adviceReformulate.Click += async (s,e) => await RequestCore(true, adviceBox.Text);
+            adviceReply.Text = "Ai-je répondu à tout ?"; adviceReply.Dock = DockStyle.Fill; adviceReply.Margin = new Padding(8, 0, 0, 0); adviceReply.Enabled = false;
+            adviceReply.Click += async (s,e) => await RequestAdvice(true);
+            tips.SetToolTip(adviceReply, "Envoie le brouillon et le début du mail reçu à l’IA pour repérer les questions restées sans réponse.");
             var tones = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, Margin = new Padding(0, 6, 0, 0), Tag = "surface" };
             tones.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             foreach (var tone in new [] {
@@ -712,7 +723,7 @@ namespace CorrecteurMail {
             adviceLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36)); adviceLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); adviceLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40)); adviceLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
             adviceLayout.Controls.Add(adviceQuestion, 0, 0); adviceLayout.Controls.Add(adviceAsk, 1, 0);
             adviceLayout.Controls.Add(adviceBox, 0, 1); adviceLayout.SetColumnSpan(adviceBox, 2);
-            adviceLayout.Controls.Add(adviceReformulate, 0, 2); adviceLayout.SetColumnSpan(adviceReformulate, 2);
+            adviceLayout.Controls.Add(adviceReformulate, 0, 2); adviceLayout.Controls.Add(adviceReply, 1, 2);
             adviceLayout.Controls.Add(tones, 0, 3); adviceLayout.SetColumnSpan(tones, 2);
             advicePage.Controls.Add(adviceLayout);
             textTabs.Dock = DockStyle.Fill; textTabs.TabPages.AddRange(new [] { inputPage, resultPage, reformulationPage, advicePage }); textTabs.Visible = false;
@@ -904,6 +915,7 @@ namespace CorrecteurMail {
             reformulate.Enabled = !busy && !paused && !String.IsNullOrWhiteSpace(state.Text);
             adviceAsk.Enabled = !busy && !paused && !String.IsNullOrWhiteSpace(state.Text);
             foreach (var tone in toneButtons) tone.Enabled = adviceAsk.Enabled;
+            adviceReply.Enabled = adviceAsk.Enabled && !manualMode;
             adviceReformulate.Enabled = !busy && !paused && adviceVersion == state.Version && adviceBox.TextLength > 0;
         }
         private void SetOriginal(string text) {
@@ -1235,7 +1247,8 @@ namespace CorrecteurMail {
                 } finally { busy = false; if (!closing) { retry.Enabled = CanCorrect; UpdateProposalActions(); } }
             }
         }
-        private async Task RequestAdvice() {
+        // replyCheck: compare the draft with the start of the quoted mail it answers.
+        private async Task RequestAdvice(bool replyCheck = false) {
             if (busy || closing || paused || settingsOpen) return;
             using (var draft = CurrentDraft()) {
                 if (draft == null) { status.Text = "Ouvrez le brouillon dans sa propre fenêtre OUTLOOK."; return; }
@@ -1244,11 +1257,17 @@ namespace CorrecteurMail {
                 if (state.Text.Length > 30000) { status.Text = "Brouillon trop long (30 000 caractères maximum)."; return; }
                 long version = state.Version; string text = state.Text;
                 string question = adviceQuestion.Text.Trim(); if (question.Length == 0) question = "Donne ton avis sur ce mail.";
-                busy = true; apply.Enabled = reformulate.Enabled = retry.Enabled = copy.Enabled = adviceAsk.Enabled = adviceReformulate.Enabled = false; foreach (var tone in toneButtons) tone.Enabled = false;
+                string received = null;
+                if (replyCheck) {
+                    received = draft.Received;
+                    if (received == null) { status.Text = "Aucun mail reçu dans ce brouillon · réservé aux réponses dans OUTLOOK."; return; }
+                    question = "Ai-je répondu à toutes les questions et demandes du mail reçu ?";
+                }
+                busy = true; apply.Enabled = reformulate.Enabled = retry.Enabled = copy.Enabled = adviceAsk.Enabled = adviceReply.Enabled = adviceReformulate.Enabled = false; foreach (var tone in toneButtons) tone.Enabled = false;
                 requestStarted = DateTime.UtcNow; requestTitle = "Avis";
                 status.Text = "Avis en cours…";
                 try {
-                    string answer = await runner.Advise(text, question);
+                    string answer = await runner.Advise(text, question, received);
                     if (closing || paused || state.Version != version) return;
                     if (String.IsNullOrWhiteSpace(answer)) throw new InvalidOperationException(settings.ProviderName + " n’a pas renvoyé d’avis exploitable. Cliquez sur Demander l’avis.");
                     using (var current = CurrentDraft()) {
