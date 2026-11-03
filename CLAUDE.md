@@ -11,6 +11,7 @@ Ne pas la répéter à chaque message. La donner seulement quand Maxime la deman
 ## Corrections en attente de release (prochaine : 1.0.9)
 La 1.0.8 a été publiée le 3 novembre 2026 (fenêtre d'installation de Claude Code qui explique les étapes et se ferme seule).
 - Appliquer grisé quand le mail contient déjà exactement la proposition — 8f00f20 + de436ce — tests Windows 323/323 réussis.
+- Avis : bouton « Ai-je répondu à tout ? » qui envoie à l'IA le début du mail reçu avec le brouillon — 6532b97 + c0a2d35 + 909d5be — tests Windows 324/324 réussis. Lecture réelle du signet _MailOriginal à valider dans Outlook.
 
 Ajouter ici chaque correction après tests Windows, et vider la liste à chaque release.
 
