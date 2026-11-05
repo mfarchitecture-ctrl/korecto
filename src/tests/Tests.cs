@@ -567,7 +567,7 @@ namespace CorrecteurMail {
                 }
                 return blockedAtStart && corrected && reformulationStillClosed && reformulated && alone;
             });
-            Check("Nouveautés : la version en cours figure dans la liste", AppAssets.Read(AppDomain.CurrentDomain.BaseDirectory, "NOUVEAUTES.txt").StartsWith("Version " + AppBrand.Version));
+            Check("Nouveautés : la version en cours figure dans la liste", AppAssets.Read("NOUVEAUTES.txt").StartsWith("Version " + AppBrand.Version));
             await Test("Onglet Avis : ouvert dès qu'il y a du texte, fermé sans texte, aucune demande avant le clic", async () => {
                 using (var empty = new Rig()) {
                     empty.Exists = false; await empty.Tick(); var tabs = empty.Get<TabControl>("textTabs"); var handle = tabs.Handle;
@@ -637,7 +637,7 @@ namespace CorrecteurMail {
                     dialog.Save.PerformClick(); return Value(initial && notYet && preference.ManualByDefault && dialog.DialogResult == DialogResult.OK);
                 }
             });
-            Check("Consignes : lignes vides et paragraphes à conserver, consigne de ton prévue", AppAssets.Read(AppDomain.CurrentDomain.BaseDirectory, "CONSIGNES.txt").Contains("ligne vide entre deux paragraphes") && AppAssets.Read(AppDomain.CurrentDomain.BaseDirectory, "CONSIGNES.txt").Contains("consigne de ton"));
+            Check("Consignes : lignes vides et paragraphes à conserver, consigne de ton prévue", AppAssets.Read("CONSIGNES.txt").Contains("ligne vide entre deux paragraphes") && AppAssets.Read("CONSIGNES.txt").Contains("consigne de ton"));
             await Test("Boutons de ton : reformulation selon la consigne choisie, sans avis préalable", async () => { using (var r = new Rig()) {
                 await r.Tick(); var tabs = r.Get<TabControl>("textTabs"); var handle = tabs.Handle; tabs.SelectedTab = r.Get<TabPage>("advicePage");
                 var tones = r.Get<List<Button>>("toneButtons"); bool ready = tones.Count == 4 && tones[0].Enabled && r.Runner.Calls == 0;
@@ -659,7 +659,7 @@ namespace CorrecteurMail {
                 box.Text = "Réponse courte."; await Task.Delay(150); var again = box.ScrollBars;
                 return empty == ScrollBars.None && shortText == ScrollBars.None && longText == ScrollBars.Vertical && again == ScrollBars.None;
             } });
-            Check("Avis : réponse structurée demandée à l'IA (synthèse, points, recommandation)", AppAssets.Read(AppDomain.CurrentDomain.BaseDirectory, "CONSIGNES.txt").Contains("« Recommandation : »") && AppAssets.Read(AppDomain.CurrentDomain.BaseDirectory, "CONSIGNES.txt").Contains("« • »"));
+            Check("Avis : réponse structurée demandée à l'IA (synthèse, points, recommandation)", AppAssets.Read("CONSIGNES.txt").Contains("« Recommandation : »") && AppAssets.Read("CONSIGNES.txt").Contains("« • »"));
             await Test("Reformuler utilise le mode explicite", async () => { using (var r = new Rig()) { var t = (Task)r.Call("Request", true); r.Runner.Pending.SetResult("Bonjour."); await t; return r.Runner.Fluent && r.Valid; } });
             await Test("Onglet Reformulé : fermé tant qu'on n'a pas reformulé, aucune demande sans clic", async () => { using (var r = new Rig()) {
                 await r.Ready(); r.Runner.Next();
@@ -847,8 +847,6 @@ namespace CorrecteurMail {
             Check("Aucune clé API ni token alternatif transmis", !start.EnvironmentVariables.ContainsKey("OPENAI_API_KEY") && !start.EnvironmentVariables.ContainsKey("ANTHROPIC_API_KEY") && !start.EnvironmentVariables.ContainsKey("CLAUDE_CODE_OAUTH_TOKEN") && !start.EnvironmentVariables.ContainsKey("ANTHROPIC_BASE_URL"));
             Check("Sonde réelle de processus Codex simulé", LocalAi.Check("chatgpt", command, directory).Connected);
             Check("Sonde réelle de processus Claude simulé", LocalAi.Check("claude", command, directory).Connected);
-            Check("Claude Code absent : installateur officiel puis connexion", LocalAi.ClaudeSetupScript(null).Contains("fermera toute seule.'; irm https://claude.ai/install.ps1 | iex;") && LocalAi.ClaudeSetupScript(null).Contains("claude.exe\" auth login"));
-            Check("Claude Code présent : connexion seule", LocalAi.ClaudeSetupScript(new LocalCommand { FileName = @"C:\O'Brien\claude.exe" }).Contains("navigateur, connectez-vous avec votre compte Claude.'; & 'C:\\O''Brien\\claude.exe' auth login") && !LocalAi.ClaudeSetupScript(new LocalCommand { FileName = "x" }).Contains("install"));
             var both = new [] { new AiConnection { Provider = "chatgpt", Connected = true, Message = "Compte connecté" }, new AiConnection { Provider = "claude", Connected = true, Message = "Compte connecté" } };
             using (var dialog = new AiSettingsDialog(null, config, autoCheck: false)) {
                 dialog.SetConnections(both); dialog.Claude.Checked = true; dialog.Models.SelectedIndex = 0;
@@ -867,7 +865,7 @@ namespace CorrecteurMail {
                 dialog.SetConnections(claudeMissing);
                 int setups = 0; dialog.SetupClaude = () => { setups++; return Task.FromResult(0); };
                 dialog.Claude.Checked = true;
-                Check("Claude non connecté : le choisir lance l'installation sans le sélectionner", setups == 1 && !dialog.Claude.Checked && dialog.Chatgpt.Checked);
+                Check("Claude non connecté : le choisir lance la connexion sans le sélectionner", setups == 1 && !dialog.Claude.Checked && dialog.Chatgpt.Checked);
                 dialog.Opacity = 0; dialog.ShowInTaskbar = false; dialog.Show(); dialog.PerformLayout();
                 Check("Modèle et validation lisibles dans une fenêtre compacte", dialog.Models.SelectedIndex == 0 && dialog.Models.DrawMode == DrawMode.OwnerDrawFixed && dialog.Accept.Height >= 30 * DisplayScale(dialog) && dialog.Accept.Height <= 55 * DisplayScale(dialog) && dialog.Accept.Bottom <= dialog.Accept.Parent.ClientSize.Height);
             }
@@ -960,9 +958,9 @@ namespace CorrecteurMail {
             Check("Lecture Outlook : processus disparu traité comme hors Outlook", !foreground.IsOutlook(99));
             Check("Réponse intégrée : deux réponses distinctes restent distinctes", Draft.InlineIdentity("0101AB", 1) != Draft.InlineIdentity("0101CD", 1) && Draft.InlineIdentity(null, 7) != Draft.InlineIdentity(null, 8) && Draft.InlineIdentity("", 7) == ":inline:7");
             string portable = Path.Combine(directory, "Dossier portable avec espaces"); Directory.CreateDirectory(portable);
-            Check("Version portable : aucune consigne externe nécessaire", !File.Exists(Path.Combine(portable, "CONSIGNES.txt")) && AppAssets.Read(portable, "CONSIGNES.txt").Contains("MODE STRICT"));
-            Check("Version portable : schéma intégré valide", new JavaScriptSerializer().DeserializeObject(AppAssets.Read(portable, "response.schema.json")) != null);
-            string schemaFile = AppAssets.SchemaPath(portable);
+            Check("Version portable : aucune consigne externe nécessaire", !File.Exists(Path.Combine(portable, "CONSIGNES.txt")) && AppAssets.Read("CONSIGNES.txt").Contains("MODE STRICT"));
+            Check("Version portable : schéma intégré valide", new JavaScriptSerializer().DeserializeObject(AppAssets.Read("response.schema.json")) != null);
+            string schemaFile = AppAssets.SchemaPath();
             Check("Version portable : schéma extrait dans le profil utilisateur, rien à côté du programme", File.Exists(schemaFile) && schemaFile.StartsWith(AppFolders.Data) && !Directory.Exists(Path.Combine(portable, "PARAMETRES_IA")) && !File.Exists(Path.Combine(portable, "response.schema.json")));
             Check("Réglages : emplacement par défaut dans le dossier de données", AiSettingsStore.DefaultPath == Path.Combine(AppFolders.Data, "ia.json") && AppearanceStore.DefaultPath == Path.Combine(AppFolders.Data, "theme.txt"));
             TestMigration(directory);
@@ -1048,10 +1046,11 @@ namespace CorrecteurMail {
             Check("Publication : sans empreinte fournie, la release reste utilisable", Updater.ParseRelease(ReleaseJson("v9.0.0", good, 2048, null)).Digest == null);
             string file = Path.Combine(root, "fichier.exe"); var bytes = new byte[2048]; bytes[0] = (byte)'M'; bytes[1] = (byte)'Z'; File.WriteAllBytes(file, bytes);
             var ok = new ReleaseInfo { Version = new Version(9, 0, 0), Size = 2048, Digest = Sha(file) };
-            Check("Contrôle du fichier : taille, programme Windows et empreinte corrects acceptés", Updater.Verify(file, ok) && Updater.Verify(file, new ReleaseInfo { Version = ok.Version }));
-            Check("Contrôle du fichier : empreinte, taille ou format incorrects refusés", !Updater.Verify(file, new ReleaseInfo { Version = ok.Version, Size = 2048, Digest = "sha256:00" }) && !Updater.Verify(file, new ReleaseInfo { Version = ok.Version, Size = 999 }) && !Updater.Verify(file, new ReleaseInfo { Version = ok.Version, Digest = "md5:abc" }));
+            Check("Contrôle du fichier : taille, programme Windows et empreinte corrects acceptés", Updater.Verify(file, ok) && Updater.Verify(file, new ReleaseInfo { Version = ok.Version, Digest = ok.Digest }));
+            Check("Contrôle du fichier : sans empreinte publiée, mise à jour refusée", !Updater.Verify(file, new ReleaseInfo { Version = ok.Version, Size = 2048 }));
+            Check("Contrôle du fichier : empreinte, taille ou format incorrects refusés", !Updater.Verify(file, new ReleaseInfo { Version = ok.Version, Size = 2048, Digest = "sha256:00" }) && !Updater.Verify(file, new ReleaseInfo { Version = ok.Version, Size = 999, Digest = ok.Digest }) && !Updater.Verify(file, new ReleaseInfo { Version = ok.Version, Digest = "md5:abc" }));
             bytes[0] = (byte)'X'; File.WriteAllBytes(file, bytes);
-            Check("Contrôle du fichier : fichier qui n'est pas un programme refusé, fichier absent refusé", !Updater.Verify(file, new ReleaseInfo { Version = ok.Version }) && !Updater.Verify(Path.Combine(root, "absent.exe"), ok));
+            Check("Contrôle du fichier : fichier qui n'est pas un programme refusé, fichier absent refusé", !Updater.Verify(file, new ReleaseInfo { Version = ok.Version, Digest = ok.Digest }) && !Updater.Verify(Path.Combine(root, "absent.exe"), ok));
             string self = Assembly.GetExecutingAssembly().Location;
             Check("Contrôle de version : l'exe annonce au moins la version publiée", Updater.AnnouncesVersion(self, new ReleaseInfo { Version = new Version(1, 0, 1) }) && !Updater.AnnouncesVersion(self, new ReleaseInfo { Version = new Version(9, 0, 0) }) && !Updater.AnnouncesVersion(file, new ReleaseInfo { Version = new Version(1, 0, 1) }));
             var found = Updater.CheckAsync(url => ReleaseJson("v9.0.0", good, 2048, null)).GetAwaiter().GetResult();

@@ -36,19 +36,16 @@ namespace CorrecteurMail {
         }
     }
     internal static class AppAssets {
-        internal static string Read(string directory, string name) {
+        // Always the copy built into the exe: a file placed next to it cannot change the instructions given to the AI.
+        internal static string Read(string name) {
             if (name != "CONSIGNES.txt" && name != "response.schema.json" && name != "NOUVEAUTES.txt") throw new ArgumentException("Ressource inconnue.");
-            string local = Path.Combine(directory, name);
-            if (File.Exists(local)) return File.ReadAllText(local, Encoding.UTF8);
             using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("CorrecteurMail." + name)) {
                 if (stream == null) throw new InvalidOperationException("Ressource manquante. Utilisez la version complète du correcteur.");
                 using (var reader = new StreamReader(stream, Encoding.UTF8)) return reader.ReadToEnd();
             }
         }
-        internal static string SchemaPath(string directory) {
-            string local = Path.GetFullPath(Path.Combine(directory, "response.schema.json"));
-            if (File.Exists(local)) return local;
-            string content = Read(directory, "response.schema.json");
+        internal static string SchemaPath() {
+            string content = Read("response.schema.json");
             string target = Path.Combine(AppFolders.Data, "RESSOURCES", "response.schema.json");
             Directory.CreateDirectory(Path.GetDirectoryName(target));
             if (!File.Exists(target) || File.ReadAllText(target, Encoding.UTF8) != content) File.WriteAllText(target, content, new UTF8Encoding(false));
@@ -178,11 +175,12 @@ namespace CorrecteurMail {
             if (command == null) return new AiConnection {
                 Provider = provider,
                 Message = provider == "claude"
-                    ? (ClaudeDesktopInstalled() ? "Claude Desktop installé ; client Claude Code (CLI) introuvable." : "Client Claude Code (CLI) introuvable sur cet ordinateur.")
+                    ? (ClaudeDesktopInstalled() ? "Claude Desktop installé ; client Claude Code (CLI) introuvable." : "Client Claude Code (CLI) introuvable sur cet ordinateur.") + " Demandez son installation à votre service informatique."
                     : name + " non installé sur cet ordinateur."
             };
             try {
-                using (var process = new Process { StartInfo = command.StartInfo(provider == "claude" ? "--safe-mode auth status" : "login status", directory ?? AppDomain.CurrentDomain.BaseDirectory) }) {
+                directory = directory ?? AppFolders.Data; Directory.CreateDirectory(directory);
+                using (var process = new Process { StartInfo = command.StartInfo(provider == "claude" ? "--safe-mode auth status" : "login status", directory) }) {
                     process.Start(); process.StandardInput.Close();
                     var output = process.StandardOutput.ReadToEndAsync(); var error = process.StandardError.ReadToEndAsync();
                     if (!process.WaitForExit(6000)) { try { process.Kill(); } catch { } return new AiConnection { Provider = provider, Message = "Connexion " + name + " non vérifiable · réessayez." }; }
@@ -190,23 +188,18 @@ namespace CorrecteurMail {
                     if (provider == "chatgpt") text += "\n" + error.GetAwaiter().GetResult();
                     else error.GetAwaiter().GetResult();
                     bool connected = IsAccountLogin(provider, process.ExitCode, text);
-                    return new AiConnection { Provider = provider, Connected = connected, Message = connected ? "Compte " + (provider == "claude" ? "Claude" : "ChatGPT") + " connecté sur cet ordinateur." : "Connectez votre compte dans " + name + ", puis Actualiser." };
+                    return new AiConnection { Provider = provider, Connected = connected, Message = connected ? "Compte " + (provider == "claude" ? "Claude" : "ChatGPT") + " connecté sur cet ordinateur." : provider == "claude" ? "Compte Claude non connecté. Cliquez sur Claude pour le connecter." : "Connectez votre compte dans " + name + ", puis Actualiser." };
                 }
             } catch (Exception ex) {
                 if (!(ex is IOException || ex is System.ComponentModel.Win32Exception || ex is InvalidOperationException || ex is UnauthorizedAccessException)) throw;
                 return new AiConnection { Provider = provider, Message = "Connexion " + name + " inaccessible · vérifiez l’application locale." };
             }
         }
-        // Installs Claude Code with the official installer if missing, then opens the account login.
-        internal static string ClaudeSetupScript(LocalCommand found) {
-            string install = "Write-Host 'Installation de Claude Code : téléchargement en cours, jusqu''à 10 minutes sans affichage. Patientez...'; Write-Host 'À la fin de l''installation, votre navigateur s''ouvrira pour vous connecter à votre compte Claude. Autorisez l''accès, puis cette fenêtre se fermera toute seule.'; irm https://claude.ai/install.ps1 | iex; ";
-            string login = "Write-Host 'Connexion : une page va s''ouvrir dans le navigateur, connectez-vous avec votre compte Claude.'; "
-                + (found == null ? "& \"$env:USERPROFILE\\.local\\bin\\claude.exe\" auth login" : "& '" + found.FileName.Replace("'", "''") + "' " + found.Prefix + "auth login");
-            return (found == null ? install : "") + login;
-        }
-        internal static Task SetupClaude() {
-            string script = Convert.ToBase64String(Encoding.Unicode.GetBytes(ClaudeSetupScript(Find("claude"))));
-            var process = Process.Start(new ProcessStartInfo("powershell.exe", "-NoProfile -ExecutionPolicy Bypass -EncodedCommand " + script) { UseShellExecute = false });
+        // Opens the official account login of an installed Claude Code. Installing it is left to the IT department.
+        internal static Task LoginClaude() {
+            LocalCommand found = Find("claude");
+            if (found == null) return Task.FromResult(0);
+            var process = Process.Start(new ProcessStartInfo(found.FileName, found.Prefix + "auth login") { UseShellExecute = false });
             return Task.Run(() => { using (process) process.WaitForExit(); });
         }
         internal static Task<AiConnection[]> Discover() {
@@ -218,7 +211,7 @@ namespace CorrecteurMail {
         internal readonly ComboBox Models = new ComboBox();
         internal readonly Button Accept = new SoftButton { Primary = true }, RefreshButton = new SoftButton();
         internal readonly Button ThemeChoice;
-        internal Func<Task> SetupClaude = LocalAi.SetupClaude;
+        internal Func<Task> SetupClaude = LocalAi.LoginClaude;
         private bool claudeConnected;
         private readonly Label chatStatus = new Label(), claudeStatus = new Label(), modelHelp = new Label();
         private readonly string settingsPath;
@@ -271,9 +264,9 @@ namespace CorrecteurMail {
             Claude.CheckedChanged += async (s,e) => {
                 if (!Claude.Checked) return;
                 if (claudeConnected) { PopulateModels("claude"); return; }
-                // Claude Code missing or not logged in: choosing Claude launches its installation and login.
+                // Claude Code not logged in: choosing Claude opens its login.
                 Claude.Checked = false; if (Chatgpt.Enabled) Chatgpt.Checked = true;
-                Claude.Enabled = false; claudeStatus.Text = "Installation et connexion en cours dans la fenêtre PowerShell…";
+                Claude.Enabled = false; claudeStatus.Text = "Connexion en cours dans la fenêtre Claude Code…";
                 try { await SetupClaude(); } catch (System.ComponentModel.Win32Exception) { }
                 if (!IsDisposed) await RefreshConnections();
             };
@@ -300,7 +293,7 @@ namespace CorrecteurMail {
             bool gpt = false, claude = false;
             foreach (var value in values) {
                 if (value.Provider == "chatgpt") { gpt = value.Connected; chatStatus.Text = value.Message; }
-                if (value.Provider == "claude") { claude = value.Connected; claudeStatus.Text = value.Message + (claude ? "" : " Cliquez sur Claude pour l’installer et le connecter."); }
+                if (value.Provider == "claude") { claude = value.Connected; claudeStatus.Text = value.Message; }
             }
             Chatgpt.Enabled = gpt; Claude.Enabled = true; claudeConnected = claude;
             if (Chatgpt.Checked && !gpt) Chatgpt.Checked = false;

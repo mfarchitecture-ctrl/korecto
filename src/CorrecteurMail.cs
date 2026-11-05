@@ -199,7 +199,7 @@ namespace CorrecteurMail {
             if (!settings.Valid) throw new ArgumentException("Choix d’IA ou de modèle invalide.");
             inspectConnection = connectionInspector;
             locateCodex = executableLocator;
-            workingDirectory = directory ?? AppDomain.CurrentDomain.BaseDirectory;
+            workingDirectory = directory ?? AppFolders.Data;
             timeoutMs = timeoutMilliseconds;
             Progress = "Connexion à " + settings.ProviderName + "…";
         }
@@ -246,10 +246,10 @@ namespace CorrecteurMail {
                 return (string)result["texte"];
             } catch (ArgumentException) { return null; } catch (InvalidOperationException) { return null; }
         }
-        internal static string ArgumentsFor(AiSettings settings, string directory) {
+        internal static string ArgumentsFor(AiSettings settings) {
             if (!settings.Valid) throw new ArgumentException("Modèle invalide.");
-            if (settings.Provider == "chatgpt") return "exec --ignore-user-config --ephemeral --skip-git-repo-check --sandbox read-only --disable shell_tool --disable multi_agent --color never --json --model " + settings.Model + " -c " + LocalCommand.Quote("model_reasoning_effort=\"low\"") + " --output-schema " + LocalCommand.Quote(AppAssets.SchemaPath(directory)) + " -";
-            string schema = AppAssets.Read(directory, "response.schema.json");
+            if (settings.Provider == "chatgpt") return "exec --ignore-user-config --ephemeral --skip-git-repo-check --sandbox read-only --disable shell_tool --disable multi_agent --color never --json --model " + settings.Model + " -c " + LocalCommand.Quote("model_reasoning_effort=\"low\"") + " --output-schema " + LocalCommand.Quote(AppAssets.SchemaPath()) + " -";
+            string schema = AppAssets.Read("response.schema.json");
             return "-p --safe-mode --tools \"\" --disallowedTools \"mcp__*\" --strict-mcp-config --mcp-config " + LocalCommand.Quote("{\"mcpServers\":{}}") + " --settings " + LocalCommand.Quote("{\"forceLoginMethod\":\"claudeai\"}") + " --no-chrome --no-session-persistence --max-turns 3 --output-format stream-json --verbose --model " + settings.Model + " --json-schema " + LocalCommand.Quote(schema.Trim());
         }
         private string Failure(string detail, string previous) {
@@ -270,7 +270,7 @@ namespace CorrecteurMail {
                 LocalCommand command = locateCodex == null ? LocalAi.Find(settings.Provider) : null;
                 if (locateCodex != null) { string exe = locateCodex(); if (exe != null) command = new LocalCommand { FileName = exe }; }
                 if (command == null) throw new InvalidOperationException((settings.Provider == "claude" ? "Claude Code" : "Codex") + " est introuvable. Connectez votre compte dans son application locale.");
-                string root = workingDirectory;
+                string root = workingDirectory; Directory.CreateDirectory(root);
                 // A confirmed login is trusted for a while: one client process per correction instead of two.
                 bool verify; lock (gate) verify = DateTime.UtcNow >= verifiedUntil;
                 if (verify) {
@@ -279,7 +279,7 @@ namespace CorrecteurMail {
                     lock (gate) verifiedUntil = DateTime.UtcNow.AddMinutes(ConnectionTrustMinutes);
                 }
                 var json = new JavaScriptSerializer();
-                string rules = AppAssets.Read(root, "CONSIGNES.txt");
+                string rules = AppAssets.Read("CONSIGNES.txt");
                 var data = new Dictionary<string, object> { { "mode", mode }, { "brouillon", text } };
                 string[] vocabulary = new VocabularyStore().Load();
                 if (vocabulary.Length > 0) data["lexique_metier"] = vocabulary;
@@ -287,7 +287,7 @@ namespace CorrecteurMail {
                 if (advice != null) data["avis"] = advice;
                 string payload = rules + "\n\nDonnées utilisateur :\n" + json.Serialize(data);
                 // No body on command line, no API key, no persisted chat, no user MCP servers.
-                var info = command.StartInfo(ArgumentsFor(settings, root), root);
+                var info = command.StartInfo(ArgumentsFor(settings), root);
                 var p = new Process { StartInfo = info };
                 var answer = new TaskCompletionSource<string>();
                 // What the AI is doing, in the words the user expects: not "correction" for a reformulation or an avis.
@@ -1469,7 +1469,7 @@ namespace CorrecteurMail {
                 check(!Integrity.SameNumbers("Sous réserve de validation.", "Validation sous 10 jours."));
                 check(!Integrity.SameNumbers("26/10/2026", "27/10/2026"));
                 check(!Integrity.SameNumbers("100 %", "100" + ",5 %"));
-                var parser = new JavaScriptSerializer(); parser.DeserializeObject(AppAssets.Read(root, "response.schema.json"));
+                var parser = new JavaScriptSerializer(); parser.DeserializeObject(AppAssets.Read("response.schema.json"));
                 File.WriteAllText(Path.Combine(root, "VERIFICATION.txt"), count + " contrôles réussis : modification, changement de fenêtre, résultat périmé, texte vide, intégrité des chiffres et dates.\r\nSchéma JSON valide.\r\nCodex trouvé : " + (AccountRunner.FindCodex() != null) + "\r\n", Encoding.UTF8); return;
             }
             if (args.Length > 0 && args[0] == "--test-window") {

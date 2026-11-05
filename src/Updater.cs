@@ -61,14 +61,13 @@ namespace CorrecteurMail {
             } catch (ArgumentException) { return null; } catch (InvalidOperationException) { return null; } catch (InvalidCastException) { return null; }
         }
 
-        // The file must be the announced size, a Windows program, and match the published SHA-256 when GitHub gives one.
+        // The file must be the announced size, a Windows program, and match the SHA-256 published by GitHub.
         internal static bool Verify(string file, ReleaseInfo release) {
             var info = new FileInfo(file);
             if (!info.Exists || info.Length < 1024 || info.Length > MaxBytes) return false;
             if (release.Size > 0 && info.Length != release.Size) return false;
             using (var stream = File.OpenRead(file)) { if (stream.ReadByte() != 'M' || stream.ReadByte() != 'Z') return false; }
-            if (String.IsNullOrEmpty(release.Digest)) return true;
-            if (!release.Digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase)) return false;
+            if (String.IsNullOrEmpty(release.Digest) || !release.Digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase)) return false;
             string expected = release.Digest.Substring(7).Trim().ToLowerInvariant();
             using (var sha = SHA256.Create()) using (var stream = File.OpenRead(file))
                 return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant() == expected;
